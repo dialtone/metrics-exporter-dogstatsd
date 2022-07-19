@@ -129,7 +129,7 @@ impl StatsdBuilder {
     }
 
     #[must_use]
-    pub fn add_global_tags<K, V>(mut self, key: K, value: V) -> Self
+    pub fn add_global_tag<K, V>(mut self, key: K, value: V) -> Self
     where
         K: Into<String>,
         V: Into<String>,
@@ -273,7 +273,10 @@ async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io
 #[cfg(test)]
 mod tests {
     use super::{Matcher, StatsdBuilder};
-    use metrics::{Key, Label, Recorder};
+    use metrics::{Key, KeyName, Label, Recorder};
+    use metrics_util::MetricKindMask;
+    use quanta::Clock;
+    use std::time::Duration;
 
     #[test]
     fn test_render() {
@@ -402,25 +405,302 @@ mod tests {
         assert!(rendered.contains(suffix_data));
         assert!(rendered.contains(default_data));
     }
+
+    #[test]
+    fn test_idle_timeout_all() {
+        let (clock, mock) = Clock::mock();
+
+        let recorder = StatsdBuilder::new()
+            .idle_timeout(MetricKindMask::ALL, Some(Duration::from_secs(10)))
+            .set_quantiles(&[0.0, 1.0])
+            .unwrap()
+            .build_with_clock(clock);
+
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        let key = Key::from_name("basic.gauge");
+        let gauge1 = recorder.register_gauge(&key);
+        gauge1.set(-3.44);
+
+        let key = Key::from_name("basic.histogram");
+        let histo1 = recorder.register_histogram(&key);
+        histo1.record(1.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected = concat!(
+            "basic.counter:42|c\n\n",
+            "basic.gauge:-3.44|c\n\n",
+            "basic.histogram.0:1|c\n",
+            "basic.histogram.1:1|c\n",
+            "basic.histogram.sum:1|c\n",
+            "basic.histogram.count:1|c\n\n",
+        );
+
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(9));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(2));
+        let rendered = handle.render();
+        assert_eq!(rendered, "");
+    }
+
+    #[test]
+    fn test_idle_timeout_partial() {
+        let (clock, mock) = Clock::mock();
+
+        let recorder = StatsdBuilder::new()
+            .idle_timeout(
+                MetricKindMask::COUNTER | MetricKindMask::HISTOGRAM,
+                Some(Duration::from_secs(10)),
+            )
+            .set_quantiles(&[0.0, 1.0])
+            .unwrap()
+            .build_with_clock(clock);
+
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        let key = Key::from_name("basic.gauge");
+        let gauge1 = recorder.register_gauge(&key);
+        gauge1.set(-3.44);
+
+        let key = Key::from_name("basic.histogram");
+        let histo1 = recorder.register_histogram(&key);
+        histo1.record(1.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected = concat!(
+            "basic.counter:42|c\n\n",
+            "basic.gauge:-3.44|c\n\n",
+            "basic.histogram.0:1|c\n",
+            "basic.histogram.1:1|c\n",
+            "basic.histogram.sum:1|c\n",
+            "basic.histogram.count:1|c\n\n",
+        );
+
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(9));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(2));
+        let rendered = handle.render();
+
+        let expected = "basic.gauge:-3.44|c\n\n";
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn test_idle_timeout_staggered_distributions() {
+        let (clock, mock) = Clock::mock();
+
+        let recorder = StatsdBuilder::new()
+            .idle_timeout(MetricKindMask::ALL, Some(Duration::from_secs(10)))
+            .set_quantiles(&[0.0, 1.0])
+            .unwrap()
+            .build_with_clock(clock);
+
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        let key = Key::from_name("basic.gauge");
+        let gauge1 = recorder.register_gauge(&key);
+        gauge1.set(-3.44);
+
+        let key = Key::from_name("basic.histogram");
+        let histo1 = recorder.register_histogram(&key);
+        histo1.record(1.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected = concat!(
+            "basic.counter:42|c\n\n",
+            "basic.gauge:-3.44|c\n\n",
+            "basic.histogram.0:1|c\n",
+            "basic.histogram.1:1|c\n",
+            "basic.histogram.sum:1|c\n",
+            "basic.histogram.count:1|c\n\n",
+        );
+
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(9));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected);
+
+        let key = Key::from_parts("basic.histogram", vec![Label::new("type", "special")]);
+        let histo2 = recorder.register_histogram(&key);
+        histo2.record(2.0);
+
+        let expected_second = concat!(
+            "basic.counter:42|c\n\n",
+            "basic.gauge:-3.44|c\n\n",
+            "basic.histogram.0:1|c\n",
+            "basic.histogram.1:1|c\n",
+            "basic.histogram.sum:1|c\n",
+            "basic.histogram.count:1|c\n",
+            "basic.histogram.0:2|c|#type:special\n",
+            "basic.histogram.1:2|c|#type:special\n",
+            "basic.histogram.sum:2|c|#type:special\n",
+            "basic.histogram.count:1|c|#type:special\n\n",
+        );
+        let rendered = handle.render();
+        assert_eq!(rendered, expected_second);
+
+        let expected_after = concat!(
+            "basic.histogram.0:2|c|#type:special\n",
+            "basic.histogram.1:2|c|#type:special\n",
+            "basic.histogram.sum:2|c|#type:special\n",
+            "basic.histogram.count:1|c|#type:special\n\n",
+        );
+
+        mock.increment(Duration::from_secs(2));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected_after);
+    }
+
+    #[test]
+    fn test_idle_timeout_doesnt_remove_recents() {
+        let (clock, mock) = Clock::mock();
+
+        let recorder = StatsdBuilder::new()
+            .idle_timeout(MetricKindMask::ALL, Some(Duration::from_secs(10)))
+            .build_with_clock(clock);
+
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        let key = Key::from_name("basic.gauge");
+        let gauge1 = recorder.register_gauge(&key);
+        gauge1.set(-3.44);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|c\n\n",);
+
+        assert_eq!(rendered, expected);
+
+        mock.increment(Duration::from_secs(9));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected);
+
+        let expected_second = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|c\n\n",);
+        let rendered = handle.render();
+        assert_eq!(rendered, expected_second);
+
+        counter1.increment(1);
+
+        let expected_after = concat!("basic.counter:43|c\n\n",);
+
+        mock.increment(Duration::from_secs(2));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected_after);
+    }
+
+    #[test]
+    fn test_idle_timeout_catches_delayed_idle() {
+        let (clock, mock) = Clock::mock();
+
+        let recorder = StatsdBuilder::new()
+            .idle_timeout(MetricKindMask::ALL, Some(Duration::from_secs(10)))
+            .build_with_clock(clock);
+
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        // First render, which starts tracking the counter in the recency state.
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected = concat!("basic.counter:42|c\n\n",);
+
+        assert_eq!(rendered, expected);
+
+        // Now go forward by 9 seconds, which is close but still right unfer the idle timeout.
+        mock.increment(Duration::from_secs(9));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected);
+
+        // Now increment the counter and advance time by two seconds: this pushes it over the idle
+        // timeout threshold, but it should not be removed since it has been updated.
+        counter1.increment(1);
+
+        let expected_after = concat!("basic.counter:43|c\n\n",);
+
+        mock.increment(Duration::from_secs(2));
+        let rendered = handle.render();
+        assert_eq!(rendered, expected_after);
+
+        // Now advance by 11 seconds, right past the idle timeout threshold.  We've made no further
+        // updates to the counter so it should be properly removed this time.
+        mock.increment(Duration::from_secs(11));
+        let rendered = handle.render();
+        assert_eq!(rendered, "");
+    }
+
+    #[test]
+    pub fn test_global_labels() {
+        let recorder = StatsdBuilder::new()
+            .add_global_tag("foo", "foo")
+            .add_global_tag("foo", "bar")
+            .build_recorder();
+        let key = Key::from_name("basic.counter");
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(42);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter = "basic.counter:42|c|#foo:bar\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
+
+    #[test]
+    pub fn test_global_labels_overrides() {
+        let recorder = StatsdBuilder::new()
+            .add_global_tag("foo", "foo")
+            .build_recorder();
+
+        let key =
+            Key::from_name("overridden").with_extra_labels(vec![Label::new("foo", "overridden")]);
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(1);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter = "overridden:1|c|#foo:overridden\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
+
+    #[test]
+    pub fn test_sanitized_render() {
+        let recorder = StatsdBuilder::new()
+            .add_global_tag("foo:", "foo")
+            .build_recorder();
+
+        let key_name = KeyName::from("yee_haw:lets go");
+        let key = Key::from_name(key_name.clone())
+            .with_extra_labels(vec![Label::new("øhno", "\"yeet\nies\\\"")]);
+        recorder.describe_counter(key_name, None, "\"Simplë stuff.\nRëally.\"".into());
+        let counter1 = recorder.register_counter(&key);
+        counter1.increment(1);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter = "yee_haw_lets_go:1|c|#foo_:foo,_hno:_yeet_ies__\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
 }
-
-// metrics.testing_bar.15:0|c
-// metrics.testing_bar.105:1|c
-// metrics.testing_bar.1005:1|c
-// metrics.testing_bar._Inf:1|c
-// metrics.testing_bar.sum:105|c
-// metrics.testing_bar.count:1|c
-
-// metrics.wee.10:0|c
-// metrics.wee.100:0|c
-// metrics.wee.1000:0|c
-// metrics.wee._Inf:1|c
-// metrics.wee.sum:1001|c
-// metrics.wee.count:1|c
-
-// metrics.testin_foo.20:0|c
-// metrics.testin_foo.110:0|c
-// metrics.testin_foo.1010:1|c
-// metrics.testin_foo._Inf:1|c
-// metrics.testin_foo.sum:1010|c
-// metrics.testin_foo.count:1|c
