@@ -58,7 +58,9 @@ pub fn sanitize_metric_name(name: &str) -> String {
 
 pub fn write_metric_line<T, T2>(
     buffer: &mut String,
+    prefix: Option<&str>,
     name: &str,
+    suffix: Option<&str>,
     mtype: &str,
     labels: &[String],
     quantile: Option<T>,
@@ -69,7 +71,16 @@ pub fn write_metric_line<T, T2>(
     T: std::fmt::Display,
     T2: std::fmt::Display,
 {
+    if let Some(pref) = prefix {
+        buffer.push_str(pref);
+        buffer.push('.');
+    }
     buffer.push_str(name);
+
+    if let Some(suf) = suffix {
+        buffer.push('.');
+        buffer.push_str(suf);
+    }
 
     if let Some(qnt) = quantile {
         buffer.push('.');

@@ -15,6 +15,7 @@ use parking_lot::RwLock;
 use quanta::Instant;
 
 pub(crate) struct Inner {
+    pub prefix: Option<String>,
     pub registry: Registry<Key, GenerationalAtomicStorage>,
     pub recency: Recency<Key>,
     pub distributions: RwLock<HashMap<String, IndexMap<Vec<String>, Distribution>>>,
@@ -125,7 +126,9 @@ impl Inner {
             for (labels, value) in by_labels.drain() {
                 write_metric_line::<&str, u64>(
                     &mut output,
+                    self.prefix.as_deref(),
                     &name,
+                    None,
                     "c",
                     &labels,
                     None,
@@ -141,7 +144,9 @@ impl Inner {
             for (labels, value) in by_labels.drain() {
                 write_metric_line::<&str, f64>(
                     &mut output,
+                    self.prefix.as_deref(),
                     &name,
+                    None,
                     "g",
                     &labels,
                     None,
@@ -162,7 +167,9 @@ impl Inner {
                             let value = snapshot.quantile(quantile.value()).unwrap_or(0.0);
                             write_metric_line(
                                 &mut output,
+                                self.prefix.as_deref(),
                                 &name,
+                                None,
                                 "h",
                                 &labels,
                                 Some(quantile.value()),
@@ -178,20 +185,24 @@ impl Inner {
                 };
                 write_metric_line::<&str, f64>(
                     &mut output,
+                    self.prefix.as_deref(),
                     &name,
+                    Some("sum"),
                     "c",
                     &labels,
-                    Some("sum"),
+                    None,
                     sum,
                     None,
                     None,
                 );
                 write_metric_line::<&str, u64>(
                     &mut output,
+                    self.prefix.as_deref(),
                     &name,
+                    Some("count"),
                     "c",
                     &labels,
-                    Some("count"),
+                    None,
                     count,
                     None,
                     None,

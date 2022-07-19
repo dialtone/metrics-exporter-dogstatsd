@@ -232,6 +232,7 @@ impl StatsdBuilder {
 
     pub(crate) fn build_with_clock(self, clock: Clock) -> StatsdRecorder {
         let inner = Inner {
+            prefix: self.prefix.clone(),
             registry: Registry::new(GenerationalStorage::new(AtomicStorage)),
             recency: Recency::new(clock, self.recency_mask, self.idle_timeout),
             distributions: RwLock::new(HashMap::new()),
@@ -294,10 +295,10 @@ mod tests {
         let labels = vec![Label::new("wutang", "forever")];
         let key = Key::from_parts("basic.gauge", labels);
         let gauge1 = recorder.register_gauge(&key);
-        gauge1.set(-3.14);
+        gauge1.set(-3.44);
         let rendered = handle.render();
         let expected_gauge = format!(
-            "{}basic.gauge:-3.14|g|#wutang:forever\n\n",
+            "{}basic.gauge:-3.44|g|#wutang:forever\n\n",
             expected_counter
         );
         assert_eq!(rendered, expected_gauge);
