@@ -176,7 +176,28 @@ impl Inner {
                     }
                     Distribution::Histogram(_) => (0 as f64, 0 as u64),
                 };
+                write_metric_line::<&str, f64>(
+                    &mut output,
+                    &name,
+                    "c",
+                    &labels,
+                    Some("sum"),
+                    sum,
+                    None,
+                    None,
+                );
+                write_metric_line::<&str, u64>(
+                    &mut output,
+                    &name,
+                    "c",
+                    &labels,
+                    Some("count"),
+                    count,
+                    None,
+                    None,
+                );
             }
+            output.push('\n');
         }
 
         output

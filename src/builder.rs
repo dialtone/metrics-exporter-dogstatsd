@@ -273,7 +273,7 @@ async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io
 #[cfg(test)]
 mod tests {
     use super::{Matcher, StatsdBuilder};
-    use metrics::{Key, Recorder};
+    use metrics::{Key, Label, Recorder};
 
     #[test]
     fn test_render() {
@@ -290,5 +290,31 @@ mod tests {
         let rendered = handle.render();
         let expected_counter = "basic.counter:42|c\n\n";
         assert_eq!(rendered, expected_counter);
+
+        let labels = vec![Label::new("wutang", "forever")];
+        let key = Key::from_parts("basic.gauge", labels);
+        let gauge1 = recorder.register_gauge(&key);
+        gauge1.set(-3.14);
+        let rendered = handle.render();
+        let expected_gauge = format!(
+            "{}basic.gauge:-3.14|g|#wutang:forever\n\n",
+            expected_counter
+        );
+        assert_eq!(rendered, expected_gauge);
+
+        let key = Key::from_name("basic.histogram");
+        let histogram1 = recorder.register_histogram(&key);
+        histogram1.record(12.0);
+        let rendered = handle.render();
+
+        let histogram_data = concat!(
+            "basic.histogram.0:12|h\n",
+            "basic.histogram.1:12|h\n",
+            "basic.histogram.sum:12|c\n",
+            "basic.histogram.count:1|c\n",
+            "\n"
+        );
+        let expected_histogram = format!("{}{}", expected_gauge, histogram_data);
+        assert_eq!(rendered, expected_histogram);
     }
 }
