@@ -26,7 +26,7 @@ use tokio::net::UdpSocket;
 use tokio::runtime;
 use tracing::error;
 
-use std::net::SocketAddr;
+use std::net::{AddrParseError, SocketAddr};
 
 // type ExporterFuture = Pin<Box<dyn Future<Output = Result<(), hyper::Error>> + Send + 'static>>;
 type ExporterFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'static>>;
@@ -87,12 +87,9 @@ impl StatsdBuilder {
         T: AsRef<str>,
     {
         self.exporter_config = ExporterConfig::PushGateway {
-            endpoint: endpoint
-                .as_ref()
-                .parse()
-                .map_err(|e: std::net::AddrParseError| {
-                    BuildError::InvalidPushGatewayEndpoint(e.to_string())
-                })?,
+            endpoint: endpoint.as_ref().parse().map_err(|e: AddrParseError| {
+                BuildError::InvalidPushGatewayEndpoint(e.to_string())
+            })?,
             interval,
         };
 
