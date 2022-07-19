@@ -374,8 +374,7 @@ mod tests {
 
         let mut summary = RollingSummary::default();
         summary.add(42.0, clock.now());
-        let mut expected = Vec::new();
-        expected.push(clock.now());
+        let mut expected = vec![clock.now()];
         mock.decrement(Duration::from_secs(20));
         summary.add(42.0, clock.now());
         expected.push(clock.now());
@@ -391,8 +390,7 @@ mod tests {
 
         let mut summary = RollingSummary::default();
         summary.add(42.0, clock.now());
-        let mut expected = Vec::new();
-        expected.push(clock.now());
+        let mut expected = vec![clock.now()];
         mock.decrement(Duration::from_secs(40));
         summary.add(42.0, clock.now());
         expected.push(clock.now());

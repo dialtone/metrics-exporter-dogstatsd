@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::common::Snapshot;
 use crate::distribution::{Distribution, DistributionBuilder};
-use crate::formatting::{key_to_parts, sanitize_metric_name, write_metric_line};
+use crate::formatting::{key_to_parts, write_metric_line};
 use crate::registry::GenerationalAtomicStorage;
 
 use metrics::{Counter, Gauge, Histogram, Key, KeyName, Recorder, SharedString, Unit};
@@ -20,7 +20,6 @@ pub(crate) struct Inner {
     pub recency: Recency<Key>,
     pub distributions: RwLock<HashMap<String, IndexMap<Vec<String>, Distribution>>>,
     pub distribution_builder: DistributionBuilder,
-    pub descriptions: RwLock<HashMap<String, SharedString>>,
     pub global_tags: IndexMap<String, String>,
 }
 
@@ -181,8 +180,38 @@ impl Inner {
 
                         (sum, summary.count() as u64)
                     }
-                    Distribution::Histogram(_) => (0 as f64, 0 as u64),
+                    Distribution::Histogram(histogram) => {
+                        for (le, count) in histogram.buckets() {
+                            write_metric_line(
+                                &mut output,
+                                self.prefix.as_deref(),
+                                &name,
+                                None,
+                                "h",
+                                &labels,
+                                Some(le),
+                                count,
+                                None,
+                                None,
+                            );
+                        }
+                        write_metric_line(
+                            &mut output,
+                            self.prefix.as_deref(),
+                            &name,
+                            None,
+                            "h",
+                            &labels,
+                            Some("+Inf"),
+                            histogram.count(),
+                            None,
+                            None,
+                        );
+
+                        (histogram.sum(), histogram.count())
+                    }
                 };
+
                 write_metric_line::<&str, f64>(
                     &mut output,
                     self.prefix.as_deref(),
@@ -225,12 +254,6 @@ impl StatsdRecorder {
             inner: self.inner.clone(),
         }
     }
-
-    fn add_description_if_missing(&self, key_name: &KeyName, description: SharedString) {
-        let sanitized = sanitize_metric_name(key_name.as_str());
-        let mut descriptions = self.inner.descriptions.write();
-        descriptions.entry(sanitized).or_insert(description);
-    }
 }
 
 impl From<Inner> for StatsdRecorder {
@@ -242,22 +265,9 @@ impl From<Inner> for StatsdRecorder {
 }
 
 impl Recorder for StatsdRecorder {
-    fn describe_counter(&self, key_name: KeyName, _unit: Option<Unit>, description: SharedString) {
-        self.add_description_if_missing(&key_name, description);
-    }
-
-    fn describe_gauge(&self, key_name: KeyName, _unit: Option<Unit>, description: SharedString) {
-        self.add_description_if_missing(&key_name, description);
-    }
-
-    fn describe_histogram(
-        &self,
-        key_name: KeyName,
-        _unit: Option<Unit>,
-        description: SharedString,
-    ) {
-        self.add_description_if_missing(&key_name, description);
-    }
+    fn describe_counter(&self, _k: KeyName, _u: Option<Unit>, _d: SharedString) {}
+    fn describe_gauge(&self, _k: KeyName, _u: Option<Unit>, _d: SharedString) {}
+    fn describe_histogram(&self, _k: KeyName, _u: Option<Unit>, _d: SharedString) {}
 
     fn register_counter(&self, key: &Key) -> Counter {
         self.inner

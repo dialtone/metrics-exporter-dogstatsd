@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use indexmap::IndexMap;
 use metrics::Key;
 

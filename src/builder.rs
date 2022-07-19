@@ -241,7 +241,6 @@ impl StatsdBuilder {
                 self.buckets,
                 self.bucket_overrides,
             ),
-            descriptions: RwLock::new(HashMap::new()),
             global_tags: self.global_tags.unwrap_or_default(),
         };
 
