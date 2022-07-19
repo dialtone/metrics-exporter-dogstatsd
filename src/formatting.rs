@@ -57,6 +57,19 @@ pub fn sanitize_metric_name(name: &str) -> String {
     out
 }
 
+pub fn sanitize_metric_suffix(name: &str) -> String {
+    // All subsequent characters must be [a-zA-Z0-9_:].
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if invalid_metric_name_character(c) {
+            out.push('_');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub fn write_metric_line<T, T2>(
     buffer: &mut String,
     prefix: Option<&str>,
@@ -73,19 +86,19 @@ pub fn write_metric_line<T, T2>(
     T2: std::fmt::Display,
 {
     if let Some(pref) = prefix {
-        buffer.push_str(pref);
+        buffer.push_str(sanitize_metric_name(pref).as_str());
         buffer.push('.');
     }
     buffer.push_str(name);
 
     if let Some(suf) = suffix {
         buffer.push('.');
-        buffer.push_str(suf);
+        buffer.push_str(sanitize_metric_suffix(suf).as_str());
     }
 
     if let Some(qnt) = quantile {
         buffer.push('.');
-        buffer.push_str(qnt.to_string().as_str());
+        buffer.push_str(sanitize_metric_suffix(qnt.to_string().as_str()).as_str());
     }
 
     buffer.push(':');

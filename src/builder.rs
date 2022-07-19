@@ -297,7 +297,7 @@ mod tests {
         gauge1.set(-3.44);
         let rendered = handle.render();
         let expected_gauge = format!(
-            "{}basic.gauge:-3.44|g|#wutang:forever\n\n",
+            "{}basic.gauge:-3.44|c|#wutang:forever\n\n",
             expected_counter
         );
         assert_eq!(rendered, expected_gauge);
@@ -308,8 +308,8 @@ mod tests {
         let rendered = handle.render();
 
         let histogram_data = concat!(
-            "basic.histogram.0:12|h\n",
-            "basic.histogram.1:12|h\n",
+            "basic.histogram.0:12|c\n",
+            "basic.histogram.1:12|c\n",
             "basic.histogram.sum:12|c\n",
             "basic.histogram.count:1|c\n",
             "\n"
@@ -317,4 +317,110 @@ mod tests {
         let expected_histogram = format!("{}{}", expected_gauge, histogram_data);
         assert_eq!(rendered, expected_histogram);
     }
+
+    #[test]
+    fn test_buckets() {
+        const DEFAULT_VALUES: [f64; 3] = [10.0, 100.0, 1000.0];
+        const PREFIX_VALUES: [f64; 3] = [15.0, 105.0, 1005.0];
+        const SUFFIX_VALUES: [f64; 3] = [20.0, 110.0, 1010.0];
+        const FULL_VALUES: [f64; 3] = [25.0, 115.0, 1015.0];
+
+        let recorder = StatsdBuilder::new()
+            .set_buckets_for_metric(
+                Matcher::Full("metrics.testing foo".to_owned()),
+                &FULL_VALUES[..],
+            )
+            .expect("bounds should not be empty")
+            .set_buckets_for_metric(
+                Matcher::Prefix("metrics.testing".to_owned()),
+                &PREFIX_VALUES[..],
+            )
+            .expect("bounds should not be empty")
+            .set_buckets_for_metric(Matcher::Suffix("foo".to_owned()), &SUFFIX_VALUES[..])
+            .expect("bounds should not be empty")
+            .set_buckets(&DEFAULT_VALUES[..])
+            .expect("bounds should not be empty")
+            .build_recorder();
+
+        let full_key = Key::from_name("metrics.testing_foo");
+        let full_key_histo = recorder.register_histogram(&full_key);
+        full_key_histo.record(FULL_VALUES[0]);
+
+        let prefix_key = Key::from_name("metrics.testing_bar");
+        let prefix_key_histo = recorder.register_histogram(&prefix_key);
+        prefix_key_histo.record(PREFIX_VALUES[1]);
+
+        let suffix_key = Key::from_name("metrics.testin_foo");
+        let suffix_key_histo = recorder.register_histogram(&suffix_key);
+        suffix_key_histo.record(SUFFIX_VALUES[2]);
+
+        let default_key = Key::from_name("metrics.wee");
+        let default_key_histo = recorder.register_histogram(&default_key);
+        default_key_histo.record(DEFAULT_VALUES[2] + 1.0);
+
+        let full_data = concat!(
+            "metrics.testing_foo.25:1|c\n",
+            "metrics.testing_foo.115:1|c\n",
+            "metrics.testing_foo.1015:1|c\n",
+            "metrics.testing_foo._Inf:1|c\n",
+            "metrics.testing_foo.sum:25|c\n",
+            "metrics.testing_foo.count:1|c\n",
+        );
+
+        let prefix_data = concat!(
+            "metrics.testing_bar.15:0|c\n",
+            "metrics.testing_bar.105:1|c\n",
+            "metrics.testing_bar.1005:1|c\n",
+            "metrics.testing_bar._Inf:1|c\n",
+            "metrics.testing_bar.sum:105|c\n",
+            "metrics.testing_bar.count:1|c\n",
+        );
+
+        let suffix_data = concat!(
+            "metrics.testin_foo.20:0|c\n",
+            "metrics.testin_foo.110:0|c\n",
+            "metrics.testin_foo.1010:1|c\n",
+            "metrics.testin_foo._Inf:1|c\n",
+            "metrics.testin_foo.sum:1010|c\n",
+            "metrics.testin_foo.count:1|c\n",
+        );
+
+        let default_data = concat!(
+            "metrics.wee.10:0|c\n",
+            "metrics.wee.100:0|c\n",
+            "metrics.wee.1000:0|c\n",
+            "metrics.wee._Inf:1|c\n",
+            "metrics.wee.sum:1001|c\n",
+            "metrics.wee.count:1|c\n",
+        );
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+
+        assert!(rendered.contains(full_data));
+        assert!(rendered.contains(prefix_data));
+        assert!(rendered.contains(suffix_data));
+        assert!(rendered.contains(default_data));
+    }
 }
+
+// metrics.testing_bar.15:0|c
+// metrics.testing_bar.105:1|c
+// metrics.testing_bar.1005:1|c
+// metrics.testing_bar._Inf:1|c
+// metrics.testing_bar.sum:105|c
+// metrics.testing_bar.count:1|c
+
+// metrics.wee.10:0|c
+// metrics.wee.100:0|c
+// metrics.wee.1000:0|c
+// metrics.wee._Inf:1|c
+// metrics.wee.sum:1001|c
+// metrics.wee.count:1|c
+
+// metrics.testin_foo.20:0|c
+// metrics.testin_foo.110:0|c
+// metrics.testin_foo.1010:1|c
+// metrics.testin_foo._Inf:1|c
+// metrics.testin_foo.sum:1010|c
+// metrics.testin_foo.count:1|c
