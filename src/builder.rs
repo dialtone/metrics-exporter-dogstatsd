@@ -713,8 +713,8 @@ mod tests {
             .build_recorder();
 
         let key_name = KeyName::from("yee_haw:lets go");
-        let key = Key::from_name(key_name.clone())
-            .with_extra_labels(vec![Label::new("øhno", "\"yeet\nies\\\"")]);
+        let key =
+            Key::from_name(key_name).with_extra_labels(vec![Label::new("øhno", "\"yeet\nies\\\"")]);
         let counter1 = recorder.register_counter(&key);
         counter1.increment(1);
 

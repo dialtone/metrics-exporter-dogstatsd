@@ -12,6 +12,7 @@ thiserror = { version = "1", default-features = false }
 quanta = { version = "0.10.0", default-features = false }
 indexmap = { version = "1", default-features = false }
 parking_lot = { version = "0.11", default-features = false }
+portable-atomic = "0.3"
 
 hyper = { version = "0.14", default-features = false, features = ["tcp", "http1"] }
 tokio = { version = "1", features = ["rt", "net", "time"] }
