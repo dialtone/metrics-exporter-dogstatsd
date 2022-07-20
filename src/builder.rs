@@ -15,11 +15,11 @@ use metrics_util::{
     MetricKindMask, Quantile,
 };
 
+use crate::common::BuildError;
 use crate::common::Matcher;
 use crate::distribution::DistributionBuilder;
 use crate::recorder::{Inner, StatsdRecorder};
 use crate::registry::AtomicStorage;
-use crate::{common::BuildError, StatsdHandle};
 
 use quanta::Clock;
 use tokio::net::UdpSocket;
@@ -311,8 +311,9 @@ mod tests {
         let rendered = handle.render();
 
         let histogram_data = concat!(
-            "basic.histogram.0:12|g\n",
-            "basic.histogram.1:12|g\n",
+            "basic.histogram.min:12|g\n",
+            "basic.histogram.max:12|g\n",
+            "basic.histogram.avg:12|g\n",
             "basic.histogram.sum:12|g\n",
             "basic.histogram.count:1|g\n",
             "\n"
@@ -366,6 +367,7 @@ mod tests {
             "metrics.testing_foo.115:1|g\n",
             "metrics.testing_foo.1015:1|g\n",
             "metrics.testing_foo._Inf:1|g\n",
+            "metrics.testing_foo.avg:25|g\n",
             "metrics.testing_foo.sum:25|g\n",
             "metrics.testing_foo.count:1|g\n",
         );
@@ -375,6 +377,7 @@ mod tests {
             "metrics.testing_bar.105:1|g\n",
             "metrics.testing_bar.1005:1|g\n",
             "metrics.testing_bar._Inf:1|g\n",
+            "metrics.testing_bar.avg:105|g\n",
             "metrics.testing_bar.sum:105|g\n",
             "metrics.testing_bar.count:1|g\n",
         );
@@ -384,6 +387,7 @@ mod tests {
             "metrics.testin_foo.110:0|g\n",
             "metrics.testin_foo.1010:1|g\n",
             "metrics.testin_foo._Inf:1|g\n",
+            "metrics.testin_foo.avg:1010|g\n",
             "metrics.testin_foo.sum:1010|g\n",
             "metrics.testin_foo.count:1|g\n",
         );
@@ -393,6 +397,7 @@ mod tests {
             "metrics.wee.100:0|g\n",
             "metrics.wee.1000:0|g\n",
             "metrics.wee._Inf:1|g\n",
+            "metrics.wee.avg:1001|g\n",
             "metrics.wee.sum:1001|g\n",
             "metrics.wee.count:1|g\n",
         );
@@ -433,8 +438,9 @@ mod tests {
         let expected = concat!(
             "basic.counter:42|c\n\n",
             "basic.gauge:-3.44|g\n\n",
-            "basic.histogram.0:1|g\n",
-            "basic.histogram.1:1|g\n",
+            "basic.histogram.min:1|g\n",
+            "basic.histogram.max:1|g\n",
+            "basic.histogram.avg:1|g\n",
             "basic.histogram.sum:1|g\n",
             "basic.histogram.count:1|g\n\n",
         );
@@ -480,8 +486,9 @@ mod tests {
         let expected = concat!(
             "basic.counter:42|c\n\n",
             "basic.gauge:-3.44|g\n\n",
-            "basic.histogram.0:1|g\n",
-            "basic.histogram.1:1|g\n",
+            "basic.histogram.min:1|g\n",
+            "basic.histogram.max:1|g\n",
+            "basic.histogram.avg:1|g\n",
             "basic.histogram.sum:1|g\n",
             "basic.histogram.count:1|g\n\n",
         );
@@ -526,8 +533,9 @@ mod tests {
         let expected = concat!(
             "basic.counter:42|c\n\n",
             "basic.gauge:-3.44|g\n\n",
-            "basic.histogram.0:1|g\n",
-            "basic.histogram.1:1|g\n",
+            "basic.histogram.min:1|g\n",
+            "basic.histogram.max:1|g\n",
+            "basic.histogram.avg:1|g\n",
             "basic.histogram.sum:1|g\n",
             "basic.histogram.count:1|g\n\n",
         );
@@ -545,12 +553,14 @@ mod tests {
         let expected_second = concat!(
             "basic.counter:42|c\n\n",
             "basic.gauge:-3.44|g\n\n",
-            "basic.histogram.0:1|g\n",
-            "basic.histogram.1:1|g\n",
+            "basic.histogram.min:1|g\n",
+            "basic.histogram.max:1|g\n",
+            "basic.histogram.avg:1|g\n",
             "basic.histogram.sum:1|g\n",
             "basic.histogram.count:1|g\n",
-            "basic.histogram.0:2|g|#type:special\n",
-            "basic.histogram.1:2|g|#type:special\n",
+            "basic.histogram.min:2|g|#type:special\n",
+            "basic.histogram.max:2|g|#type:special\n",
+            "basic.histogram.avg:2|g|#type:special\n",
             "basic.histogram.sum:2|g|#type:special\n",
             "basic.histogram.count:1|g|#type:special\n\n",
         );
@@ -558,8 +568,9 @@ mod tests {
         assert_eq!(rendered, expected_second);
 
         let expected_after = concat!(
-            "basic.histogram.0:2|g|#type:special\n",
-            "basic.histogram.1:2|g|#type:special\n",
+            "basic.histogram.min:2|g|#type:special\n",
+            "basic.histogram.max:2|g|#type:special\n",
+            "basic.histogram.avg:2|g|#type:special\n",
             "basic.histogram.sum:2|g|#type:special\n",
             "basic.histogram.count:1|g|#type:special\n\n",
         );
@@ -587,7 +598,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected = concat!("basic.counter:42|g\n\n", "basic.gauge:-3.44|g\n\n",);
+        let expected = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|g\n\n",);
 
         assert_eq!(rendered, expected);
 
@@ -595,13 +606,13 @@ mod tests {
         let rendered = handle.render();
         assert_eq!(rendered, expected);
 
-        let expected_second = concat!("basic.counter:42|g\n\n", "basic.gauge:-3.44|g\n\n",);
+        let expected_second = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|g\n\n",);
         let rendered = handle.render();
         assert_eq!(rendered, expected_second);
 
         counter1.increment(1);
 
-        let expected_after = concat!("basic.counter:43|g\n\n",);
+        let expected_after = concat!("basic.counter:43|c\n\n",);
 
         mock.increment(Duration::from_secs(2));
         let rendered = handle.render();
@@ -623,7 +634,7 @@ mod tests {
         // First render, which starts tracking the counter in the recency state.
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected = concat!("basic.counter:42|g\n\n",);
+        let expected = concat!("basic.counter:42|c\n\n",);
 
         assert_eq!(rendered, expected);
 
@@ -636,7 +647,7 @@ mod tests {
         // timeout threshold, but it should not be removed since it has been updated.
         counter1.increment(1);
 
-        let expected_after = concat!("basic.counter:43|g\n\n",);
+        let expected_after = concat!("basic.counter:43|c\n\n",);
 
         mock.increment(Duration::from_secs(2));
         let rendered = handle.render();
@@ -661,7 +672,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "basic.counter:42|g|#foo:bar\n\n";
+        let expected_counter = "basic.counter:42|c|#foo:bar\n\n";
 
         assert_eq!(rendered, expected_counter);
     }
@@ -679,7 +690,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "overridden:1|g|#foo:overridden\n\n";
+        let expected_counter = "overridden:1|c|#foo:overridden\n\n";
 
         assert_eq!(rendered, expected_counter);
     }
@@ -693,13 +704,12 @@ mod tests {
         let key_name = KeyName::from("yee_haw:lets go");
         let key = Key::from_name(key_name.clone())
             .with_extra_labels(vec![Label::new("øhno", "\"yeet\nies\\\"")]);
-        recorder.describe_counter(key_name, None, "\"Simplë stuff.\nRëally.\"".into());
         let counter1 = recorder.register_counter(&key);
         counter1.increment(1);
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "yee_haw_lets_go:1|g|#foo_:foo,_hno:_yeet_ies__\n\n";
+        let expected_counter = "yee_haw_lets_go:1|c|#foo_:foo,øhno:_yeet_ies__\n\n";
 
         assert_eq!(rendered, expected_counter);
     }

@@ -164,6 +164,17 @@ impl Inner {
                         let snapshot = summary.snapshot(Instant::now());
                         for quantile in quantiles.iter() {
                             let value = snapshot.quantile(quantile.value()).unwrap_or(0.0);
+                            let qv = quantile.value().to_string();
+                            let quantile_name = if qv == "0" {
+                                "min"
+                            } else if qv == "0.5" {
+                                "median"
+                            } else if qv == "1" {
+                                "max"
+                            } else {
+                                qv.as_str()
+                            };
+
                             write_metric_line(
                                 &mut output,
                                 self.prefix.as_deref(),
@@ -171,7 +182,7 @@ impl Inner {
                                 None,
                                 "g",
                                 &labels,
-                                Some(quantile.value()),
+                                Some(quantile_name),
                                 value,
                                 None,
                                 None,
@@ -212,6 +223,18 @@ impl Inner {
                     }
                 };
 
+                write_metric_line::<&str, f64>(
+                    &mut output,
+                    self.prefix.as_deref(),
+                    &name,
+                    Some("avg"),
+                    "g",
+                    &labels,
+                    None,
+                    sum / count as f64,
+                    None,
+                    None,
+                );
                 write_metric_line::<&str, f64>(
                     &mut output,
                     self.prefix.as_deref(),
