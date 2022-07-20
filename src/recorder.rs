@@ -11,18 +11,18 @@ use metrics::{Counter, Gauge, Histogram, Key, KeyName, Recorder, SharedString, U
 use metrics_util::registry::{Recency, Registry};
 
 use indexmap::IndexMap;
-use parking_lot::RwLock;
 use quanta::Instant;
 
 pub(crate) struct Inner {
     pub prefix: Option<String>,
     pub registry: Registry<Key, GenerationalAtomicStorage>,
     pub recency: Recency<Key>,
-    // take the next 2 lines out of here and just re-create them each time in the get_recent_metrics method
-    pub distributions: RwLock<HashMap<String, IndexMap<Vec<String>, Distribution>>>,
     pub distribution_builder: DistributionBuilder,
+    // take the next 2 lines out of here and just re-create them each time in the get_recent_metrics method
     pub global_tags: IndexMap<String, String>,
 }
+
+type Distributions = HashMap<String, IndexMap<Vec<String>, Distribution>>;
 
 impl Inner {
     fn get_recent_metrics(&self) -> Snapshot {
@@ -73,38 +73,19 @@ impl Inner {
         }
 
         let histogram_handles = self.registry.get_histogram_handles();
-        self.distributions.write().clear(); // reset
+        let mut distributions: Distributions = HashMap::new();
         for (key, histogram) in histogram_handles {
             let gen = histogram.get_generation();
             if !self
                 .recency
                 .should_store_histogram(&key, gen, &self.registry)
             {
-                // Since we store aggregated distributions directly, when we're told that a metric
-                // is not recent enough and should be/was deleted from the registry, we also need to
-                // delete it on our side as well.
-                let (name, labels) = key_to_parts(&key, Some(&self.global_tags));
-                let mut wg = self.distributions.write();
-                let delete_by_name = if let Some(by_name) = wg.get_mut(&name) {
-                    by_name.remove(&labels);
-                    by_name.is_empty()
-                } else {
-                    false
-                };
-
-                // If there's no more variants in the per-metric-name distribution map, then delete
-                // it entirely, otherwise we end up with weird empty output during render.
-                if delete_by_name {
-                    wg.remove(&name);
-                }
-
                 continue;
             }
 
             let (name, labels) = key_to_parts(&key, Some(&self.global_tags));
 
-            let mut wg = self.distributions.write();
-            let entry = wg
+            let entry = distributions
                 .entry(name.clone())
                 .or_insert_with(IndexMap::new)
                 .entry(labels)
@@ -114,8 +95,6 @@ impl Inner {
                 .get_inner()
                 .clear_with(|samples| entry.record_samples(samples));
         }
-
-        let distributions = self.distributions.read().clone();
 
         Snapshot {
             counters,

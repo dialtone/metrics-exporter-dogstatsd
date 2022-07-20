@@ -235,7 +235,6 @@ impl StatsdBuilder {
             prefix: self.prefix.clone(),
             registry: Registry::new(GenerationalStorage::new(AtomicStorage)),
             recency: Recency::new(clock, self.recency_mask, self.idle_timeout),
-            distributions: RwLock::new(HashMap::new()),
             distribution_builder: DistributionBuilder::new(
                 self.quantiles,
                 self.buckets,
