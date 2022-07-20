@@ -18,6 +18,7 @@ pub(crate) struct Inner {
     pub prefix: Option<String>,
     pub registry: Registry<Key, GenerationalAtomicStorage>,
     pub recency: Recency<Key>,
+    // take the next 2 lines out of here and just re-create them each time in the get_recent_metrics method
     pub distributions: RwLock<HashMap<String, IndexMap<Vec<String>, Distribution>>>,
     pub distribution_builder: DistributionBuilder,
     pub global_tags: IndexMap<String, String>,
@@ -32,9 +33,19 @@ impl Inner {
             if !self.recency.should_store_counter(&key, gen, &self.registry) {
                 continue;
             }
+            // [11:00 PM] toby: or just do a pass over the values you collect, discarding anything with a zero value
+            // [11:00 PM] toby: and then don't actually emit it to statsd
+            // [11:01 PM] toby: and use a normal/sufficiently large idle timeout
+            // [11:01 PM] toby: unless you plan to have hundreds, thousands, etc, of unique-but-idle-or-maybe-never-updated-again metrics sitting around at any given time, that should be fine
+            // [11:02 PM] dialtone: I don't understand the zero value you mentioned, I don't think I would see a zero value for an actively updated metric, right?
+            // [11:03 PM] dialtone: I could keep the last value I flushed to statsd and subtract it from the current value I fetched
+            // [11:03 PM] toby: t=0: you query the registry, get all handles, do a consuming op (swap, clear_with, etc) and now those metrics are at their zero value
+            // [11:03 PM] dialtone: ah ok
+            // [11:03 PM] toby: t=1: only one of them has been updated since
+            // [11:03 PM] toby: every one but that one goes bye bye
 
             let (name, labels) = key_to_parts(&key, Some(&self.global_tags));
-            let value = counter.get_inner().load(Ordering::Acquire);
+            let value = counter.get_inner().swap(0, Ordering::Acquire);
             let entry = counters
                 .entry(name)
                 .or_insert_with(HashMap::new)
@@ -52,7 +63,7 @@ impl Inner {
             }
 
             let (name, labels) = key_to_parts(&key, Some(&self.global_tags));
-            let value = f64::from_bits(gauge.get_inner().load(Ordering::Acquire));
+            let value = f64::from_bits(gauge.get_inner().swap(0, Ordering::Acquire));
             let entry = gauges
                 .entry(name)
                 .or_insert_with(HashMap::new)
@@ -62,6 +73,7 @@ impl Inner {
         }
 
         let histogram_handles = self.registry.get_histogram_handles();
+        self.distributions.write().clear(); // reset
         for (key, histogram) in histogram_handles {
             let gen = histogram.get_generation();
             if !self
@@ -122,7 +134,12 @@ impl Inner {
         let mut output = String::new();
 
         for (name, mut by_labels) in counters.drain() {
+            let mut wrote = false;
             for (labels, value) in by_labels.drain() {
+                if value == 0 {
+                    continue;
+                }
+                wrote = true;
                 write_metric_line::<&str, u64>(
                     &mut output,
                     self.prefix.as_deref(),
@@ -136,11 +153,18 @@ impl Inner {
                     None,
                 );
             }
-            output.push('\n');
+            if wrote {
+                output.push('\n');
+            }
         }
 
         for (name, mut by_labels) in gauges.drain() {
+            let mut wrote = false;
             for (labels, value) in by_labels.drain() {
+                if value == 0.0 {
+                    continue;
+                }
+                wrote = true;
                 write_metric_line::<&str, f64>(
                     &mut output,
                     self.prefix.as_deref(),
@@ -154,13 +178,21 @@ impl Inner {
                     None,
                 );
             }
-            output.push('\n');
+            if wrote {
+                output.push('\n');
+            }
         }
 
         for (name, mut by_labels) in distributions.drain() {
+            let mut wrote = false;
             for (labels, distribution) in by_labels.drain(..) {
                 let (sum, count) = match distribution {
                     Distribution::Summary(summary, quantiles, sum) => {
+                        let count = summary.count();
+                        if count == 0 {
+                            continue;
+                        }
+                        wrote = true;
                         let snapshot = summary.snapshot(Instant::now());
                         for quantile in quantiles.iter() {
                             let value = snapshot.quantile(quantile.value()).unwrap_or(0.0);
@@ -189,9 +221,14 @@ impl Inner {
                             );
                         }
 
-                        (sum, summary.count() as u64)
+                        (sum, count as u64)
                     }
                     Distribution::Histogram(histogram) => {
+                        let count = histogram.count();
+                        if count == 0 {
+                            continue;
+                        }
+                        wrote = true;
                         for (le, count) in histogram.buckets() {
                             write_metric_line(
                                 &mut output,
@@ -219,7 +256,7 @@ impl Inner {
                             None,
                         );
 
-                        (histogram.sum(), histogram.count())
+                        (histogram.sum(), count)
                     }
                 };
 
@@ -260,7 +297,9 @@ impl Inner {
                     None,
                 );
             }
-            output.push('\n');
+            if wrote {
+                output.push('\n');
+            }
         }
 
         output
