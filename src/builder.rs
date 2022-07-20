@@ -300,7 +300,7 @@ mod tests {
         gauge1.set(-3.44);
         let rendered = handle.render();
         let expected_gauge = format!(
-            "{}basic.gauge:-3.44|c|#wutang:forever\n\n",
+            "{}basic.gauge:-3.44|g|#wutang:forever\n\n",
             expected_counter
         );
         assert_eq!(rendered, expected_gauge);
@@ -311,10 +311,10 @@ mod tests {
         let rendered = handle.render();
 
         let histogram_data = concat!(
-            "basic.histogram.0:12|c\n",
-            "basic.histogram.1:12|c\n",
-            "basic.histogram.sum:12|c\n",
-            "basic.histogram.count:1|c\n",
+            "basic.histogram.0:12|g\n",
+            "basic.histogram.1:12|g\n",
+            "basic.histogram.sum:12|g\n",
+            "basic.histogram.count:1|g\n",
             "\n"
         );
         let expected_histogram = format!("{}{}", expected_gauge, histogram_data);
@@ -362,39 +362,39 @@ mod tests {
         default_key_histo.record(DEFAULT_VALUES[2] + 1.0);
 
         let full_data = concat!(
-            "metrics.testing_foo.25:1|c\n",
-            "metrics.testing_foo.115:1|c\n",
-            "metrics.testing_foo.1015:1|c\n",
-            "metrics.testing_foo._Inf:1|c\n",
-            "metrics.testing_foo.sum:25|c\n",
-            "metrics.testing_foo.count:1|c\n",
+            "metrics.testing_foo.25:1|g\n",
+            "metrics.testing_foo.115:1|g\n",
+            "metrics.testing_foo.1015:1|g\n",
+            "metrics.testing_foo._Inf:1|g\n",
+            "metrics.testing_foo.sum:25|g\n",
+            "metrics.testing_foo.count:1|g\n",
         );
 
         let prefix_data = concat!(
-            "metrics.testing_bar.15:0|c\n",
-            "metrics.testing_bar.105:1|c\n",
-            "metrics.testing_bar.1005:1|c\n",
-            "metrics.testing_bar._Inf:1|c\n",
-            "metrics.testing_bar.sum:105|c\n",
-            "metrics.testing_bar.count:1|c\n",
+            "metrics.testing_bar.15:0|g\n",
+            "metrics.testing_bar.105:1|g\n",
+            "metrics.testing_bar.1005:1|g\n",
+            "metrics.testing_bar._Inf:1|g\n",
+            "metrics.testing_bar.sum:105|g\n",
+            "metrics.testing_bar.count:1|g\n",
         );
 
         let suffix_data = concat!(
-            "metrics.testin_foo.20:0|c\n",
-            "metrics.testin_foo.110:0|c\n",
-            "metrics.testin_foo.1010:1|c\n",
-            "metrics.testin_foo._Inf:1|c\n",
-            "metrics.testin_foo.sum:1010|c\n",
-            "metrics.testin_foo.count:1|c\n",
+            "metrics.testin_foo.20:0|g\n",
+            "metrics.testin_foo.110:0|g\n",
+            "metrics.testin_foo.1010:1|g\n",
+            "metrics.testin_foo._Inf:1|g\n",
+            "metrics.testin_foo.sum:1010|g\n",
+            "metrics.testin_foo.count:1|g\n",
         );
 
         let default_data = concat!(
-            "metrics.wee.10:0|c\n",
-            "metrics.wee.100:0|c\n",
-            "metrics.wee.1000:0|c\n",
-            "metrics.wee._Inf:1|c\n",
-            "metrics.wee.sum:1001|c\n",
-            "metrics.wee.count:1|c\n",
+            "metrics.wee.10:0|g\n",
+            "metrics.wee.100:0|g\n",
+            "metrics.wee.1000:0|g\n",
+            "metrics.wee._Inf:1|g\n",
+            "metrics.wee.sum:1001|g\n",
+            "metrics.wee.count:1|g\n",
         );
 
         let handle = recorder.handle();
@@ -432,11 +432,11 @@ mod tests {
         let rendered = handle.render();
         let expected = concat!(
             "basic.counter:42|c\n\n",
-            "basic.gauge:-3.44|c\n\n",
-            "basic.histogram.0:1|c\n",
-            "basic.histogram.1:1|c\n",
-            "basic.histogram.sum:1|c\n",
-            "basic.histogram.count:1|c\n\n",
+            "basic.gauge:-3.44|g\n\n",
+            "basic.histogram.0:1|g\n",
+            "basic.histogram.1:1|g\n",
+            "basic.histogram.sum:1|g\n",
+            "basic.histogram.count:1|g\n\n",
         );
 
         assert_eq!(rendered, expected);
@@ -479,11 +479,11 @@ mod tests {
         let rendered = handle.render();
         let expected = concat!(
             "basic.counter:42|c\n\n",
-            "basic.gauge:-3.44|c\n\n",
-            "basic.histogram.0:1|c\n",
-            "basic.histogram.1:1|c\n",
-            "basic.histogram.sum:1|c\n",
-            "basic.histogram.count:1|c\n\n",
+            "basic.gauge:-3.44|g\n\n",
+            "basic.histogram.0:1|g\n",
+            "basic.histogram.1:1|g\n",
+            "basic.histogram.sum:1|g\n",
+            "basic.histogram.count:1|g\n\n",
         );
 
         assert_eq!(rendered, expected);
@@ -495,7 +495,7 @@ mod tests {
         mock.increment(Duration::from_secs(2));
         let rendered = handle.render();
 
-        let expected = "basic.gauge:-3.44|c\n\n";
+        let expected = "basic.gauge:-3.44|g\n\n";
         assert_eq!(rendered, expected);
     }
 
@@ -525,11 +525,11 @@ mod tests {
         let rendered = handle.render();
         let expected = concat!(
             "basic.counter:42|c\n\n",
-            "basic.gauge:-3.44|c\n\n",
-            "basic.histogram.0:1|c\n",
-            "basic.histogram.1:1|c\n",
-            "basic.histogram.sum:1|c\n",
-            "basic.histogram.count:1|c\n\n",
+            "basic.gauge:-3.44|g\n\n",
+            "basic.histogram.0:1|g\n",
+            "basic.histogram.1:1|g\n",
+            "basic.histogram.sum:1|g\n",
+            "basic.histogram.count:1|g\n\n",
         );
 
         assert_eq!(rendered, expected);
@@ -544,24 +544,24 @@ mod tests {
 
         let expected_second = concat!(
             "basic.counter:42|c\n\n",
-            "basic.gauge:-3.44|c\n\n",
-            "basic.histogram.0:1|c\n",
-            "basic.histogram.1:1|c\n",
-            "basic.histogram.sum:1|c\n",
-            "basic.histogram.count:1|c\n",
-            "basic.histogram.0:2|c|#type:special\n",
-            "basic.histogram.1:2|c|#type:special\n",
-            "basic.histogram.sum:2|c|#type:special\n",
-            "basic.histogram.count:1|c|#type:special\n\n",
+            "basic.gauge:-3.44|g\n\n",
+            "basic.histogram.0:1|g\n",
+            "basic.histogram.1:1|g\n",
+            "basic.histogram.sum:1|g\n",
+            "basic.histogram.count:1|g\n",
+            "basic.histogram.0:2|g|#type:special\n",
+            "basic.histogram.1:2|g|#type:special\n",
+            "basic.histogram.sum:2|g|#type:special\n",
+            "basic.histogram.count:1|g|#type:special\n\n",
         );
         let rendered = handle.render();
         assert_eq!(rendered, expected_second);
 
         let expected_after = concat!(
-            "basic.histogram.0:2|c|#type:special\n",
-            "basic.histogram.1:2|c|#type:special\n",
-            "basic.histogram.sum:2|c|#type:special\n",
-            "basic.histogram.count:1|c|#type:special\n\n",
+            "basic.histogram.0:2|g|#type:special\n",
+            "basic.histogram.1:2|g|#type:special\n",
+            "basic.histogram.sum:2|g|#type:special\n",
+            "basic.histogram.count:1|g|#type:special\n\n",
         );
 
         mock.increment(Duration::from_secs(2));
@@ -587,7 +587,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|c\n\n",);
+        let expected = concat!("basic.counter:42|g\n\n", "basic.gauge:-3.44|g\n\n",);
 
         assert_eq!(rendered, expected);
 
@@ -595,13 +595,13 @@ mod tests {
         let rendered = handle.render();
         assert_eq!(rendered, expected);
 
-        let expected_second = concat!("basic.counter:42|c\n\n", "basic.gauge:-3.44|c\n\n",);
+        let expected_second = concat!("basic.counter:42|g\n\n", "basic.gauge:-3.44|g\n\n",);
         let rendered = handle.render();
         assert_eq!(rendered, expected_second);
 
         counter1.increment(1);
 
-        let expected_after = concat!("basic.counter:43|c\n\n",);
+        let expected_after = concat!("basic.counter:43|g\n\n",);
 
         mock.increment(Duration::from_secs(2));
         let rendered = handle.render();
@@ -623,7 +623,7 @@ mod tests {
         // First render, which starts tracking the counter in the recency state.
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected = concat!("basic.counter:42|c\n\n",);
+        let expected = concat!("basic.counter:42|g\n\n",);
 
         assert_eq!(rendered, expected);
 
@@ -636,7 +636,7 @@ mod tests {
         // timeout threshold, but it should not be removed since it has been updated.
         counter1.increment(1);
 
-        let expected_after = concat!("basic.counter:43|c\n\n",);
+        let expected_after = concat!("basic.counter:43|g\n\n",);
 
         mock.increment(Duration::from_secs(2));
         let rendered = handle.render();
@@ -661,7 +661,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "basic.counter:42|c|#foo:bar\n\n";
+        let expected_counter = "basic.counter:42|g|#foo:bar\n\n";
 
         assert_eq!(rendered, expected_counter);
     }
@@ -679,7 +679,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "overridden:1|c|#foo:overridden\n\n";
+        let expected_counter = "overridden:1|g|#foo:overridden\n\n";
 
         assert_eq!(rendered, expected_counter);
     }
@@ -699,7 +699,7 @@ mod tests {
 
         let handle = recorder.handle();
         let rendered = handle.render();
-        let expected_counter = "yee_haw_lets_go:1|c|#foo_:foo,_hno:_yeet_ies__\n\n";
+        let expected_counter = "yee_haw_lets_go:1|g|#foo_:foo,_hno:_yeet_ies__\n\n";
 
         assert_eq!(rendered, expected_counter);
     }
