@@ -1,9 +1,20 @@
 [package]
 name = "metrics-exporter-dogstatsd"
 version = "0.1.0"
+authors = ["Valentino Volonghi <dialtone@nextroll.com>"]
 edition = "2021"
+rust-version="1.56.1"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+
+description = "A metrics-compatible exporter for sending metrics to Statsd/Dogstatsd."
+homepage = "https://github.com/dialtone/metrics-exporter-dogstatsd"
+repository = "https://github.com/dialtone/metrics-exporter-dogstatsd"
+documentation = "https://docs.rs/metrics-exporter-dogstatsd"
+readme = "README.md"
+
+categories = ["development-tools::debugging"]
+keywords = ["metrics", "telemetry", "statsd"]
 
 [dependencies]
 metrics = "0.20"
@@ -16,3 +27,6 @@ portable-atomic = "0.3"
 tokio = { version = "1", features = ["rt", "net", "time"] }
 tracing = { version = "0.1.26" }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
