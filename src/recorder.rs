@@ -18,7 +18,6 @@ pub(crate) struct Inner {
     pub registry: Registry<Key, GenerationalAtomicStorage>,
     pub recency: Recency<Key>,
     pub distribution_builder: DistributionBuilder,
-    // take the next 2 lines out of here and just re-create them each time in the get_recent_metrics method
     pub global_tags: IndexMap<String, String>,
 }
 
@@ -329,12 +328,12 @@ impl Recorder for StatsdRecorder {
     }
 }
 
-/// Handle for accessing metrics stored via [`PrometheusRecorder`].
+/// Handle for accessing metrics stored via [`StatsdRecorder`].
 ///
 /// In certain scenarios, it may be necessary to directly handle requests that would otherwise be
-/// handled directly by the HTTP listener, or push gateway background task.  [`PrometheusHandle`]
-/// allows rendering a snapshot of the current metrics stored by an installed [`PrometheusRecorder`]
-/// as a payload conforming to the Prometheus exposition format.
+/// handled directly by the HTTP listener, or push gateway background task.  [`StatsdHandle`]
+/// allows rendering a snapshot of the current metrics stored by an installed [`StatsdRecorder`]
+/// as a payload conforming to the Statsd exposition format.
 #[derive(Clone)]
 pub struct StatsdHandle {
     inner: Arc<Inner>,
@@ -342,7 +341,7 @@ pub struct StatsdHandle {
 
 impl StatsdHandle {
     /// Takes a snapshot of the metrics held by the recorder and generates a payload conforming to
-    /// the Prometheus exposition format.
+    /// the Statsd exposition format.
     pub fn render(&self) -> String {
         self.inner.render()
     }

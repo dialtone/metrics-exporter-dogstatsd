@@ -41,7 +41,7 @@ impl Matcher {
     }
 }
 
-/// Errors that could occur while building or installing a Prometheus recorder/exporter.
+/// Errors that could occur while building or installing a Statsd recorder/exporter.
 #[derive(Debug, Error)]
 pub enum BuildError {
     /// There was an issue when creating the necessary Tokio runtime to launch the exporter.

@@ -61,7 +61,6 @@ pub fn sanitize_label_value(key: &str) -> String {
     out
 }
 
-/// Metrics naming [rules](https://docs.datadoghq.com/developers/dogstatsd/datagram_shell?tabs=metrics)
 /// - Metric names must start with a letter.
 /// - Metric names must only contain ASCII alphanumerics, underscores, and periods.
 /// - Other characters, including spaces, are converted to underscores.

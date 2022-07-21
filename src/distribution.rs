@@ -11,15 +11,15 @@ use metrics_util::{Histogram, Quantile, Summary};
 /// Distribution type.
 #[derive(Clone)]
 pub enum Distribution {
-    /// A Prometheus histogram.
+    /// A Statsd histogram.
     ///
-    /// Exposes "bucketed" values to Prometheus, counting the number of samples
+    /// Exposes "bucketed" values to Statsd, counting the number of samples
     /// below a given threshold i.e. 100 requests faster than 20ms, 1000 requests
     /// faster than 50ms, etc.
     Histogram(Histogram),
-    /// A Prometheus summary.
+    /// A Statsd summary.
     ///
-    /// Computes and exposes value quantiles directly to Prometheus i.e. 50% of
+    /// Computes and exposes value quantiles directly to Statsd i.e. 50% of
     /// requests were faster than 200ms, and 99% of requests were faster than
     /// 1000ms, etc.
     Summary(RollingSummary, Arc<Vec<Quantile>>, f64),

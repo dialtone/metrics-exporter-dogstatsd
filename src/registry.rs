@@ -8,7 +8,7 @@ use quanta::Instant;
 
 pub type GenerationalAtomicStorage = GenerationalStorage<AtomicStorage>;
 
-/// Atomic metric storage for the prometheus exporter.
+/// Atomic metric storage for the statsd exporter.
 pub struct AtomicStorage;
 
 impl<K> metrics_util::registry::Storage<K> for AtomicStorage {
