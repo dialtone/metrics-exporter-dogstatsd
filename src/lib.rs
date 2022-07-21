@@ -49,8 +49,8 @@
 //! builder.install().expect("failed to install recorder/exporter");
 //!
 //! // Maybe you have a more complicated setup and want to be handed back the recorder
-//! // object and a future that can run the HTTP listener / push gateway so you can
-//! // install/spawn them in a specific way.. also not a problem!
+//! // object and a future that can run the push gateway so you can install/spawn it
+//! // in a specific way.. also not a problem!
 //! //
 //! // As this is a more advanced method, it _must_ be called from within an existing
 //! // Tokio runtime when the exporter is running in HTTP listener/scrape endpoint mode.
