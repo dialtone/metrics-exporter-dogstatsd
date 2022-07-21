@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-metrics = { git = "https://github.com/metrics-rs/metrics" }
-metrics-util = { git = "https://github.com/metrics-rs/metrics", default-features = false, features = ["recency", "registry", "summary"] }
+metrics = "0.20"
+metrics-util = { version = "0.14" , default-features = false, features = ["recency", "registry", "summary"] }
 thiserror = { version = "1", default-features = false }
 quanta = { version = "0.10.0", default-features = false }
 indexmap = { version = "1", default-features = false }
