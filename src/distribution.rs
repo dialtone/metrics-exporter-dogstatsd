@@ -23,6 +23,8 @@ pub enum Distribution {
     /// requests were faster than 200ms, and 99% of requests were faster than
     /// 1000ms, etc.
     Summary(RollingSummary, Arc<Vec<Quantile>>, f64),
+    ///
+    Granular(Vec<f64>),
 }
 
 impl Distribution {
@@ -38,6 +40,10 @@ impl Distribution {
         Distribution::Summary(summary, quantiles, 0.0)
     }
 
+    pub fn new_granular() -> Distribution {
+        Distribution::Granular(vec![])
+    }
+
     /// Records the given `samples` in the current distribution.
     pub fn record_samples(&mut self, samples: &[(f64, Instant)]) {
         match self {
@@ -50,6 +56,11 @@ impl Distribution {
                     *sum += *sample;
                 }
             }
+            Distribution::Granular(v) => {
+                for (sample, _ts) in samples {
+                    v.push(*sample)
+                }
+            }
         }
     }
 }
@@ -60,6 +71,7 @@ pub struct DistributionBuilder {
     quantiles: Arc<Vec<Quantile>>,
     buckets: Option<Vec<f64>>,
     bucket_overrides: Option<Vec<(Matcher, Vec<f64>)>>,
+    granular: bool,
 }
 
 impl DistributionBuilder {
@@ -68,6 +80,7 @@ impl DistributionBuilder {
         quantiles: Vec<Quantile>,
         buckets: Option<Vec<f64>>,
         bucket_overrides: Option<HashMap<Matcher, Vec<f64>>>,
+        granular: bool,
     ) -> DistributionBuilder {
         DistributionBuilder {
             quantiles: Arc::new(quantiles),
@@ -77,11 +90,16 @@ impl DistributionBuilder {
                 matchers.sort_by(|a, b| a.0.cmp(&b.0));
                 matchers
             }),
+            granular,
         }
     }
 
     /// Returns a distribution for the given metric key.
     pub fn get_distribution(&self, name: &str) -> Distribution {
+        if self.granular {
+            return Distribution::new_granular();
+        }
+
         if let Some(ref overrides) = self.bucket_overrides {
             for (matcher, buckets) in overrides.iter() {
                 if matcher.matches(name) {
@@ -99,6 +117,10 @@ impl DistributionBuilder {
 
     /// Returns the distribution type for the given metric key.
     pub fn get_distribution_type(&self, name: &str) -> &str {
+        if self.granular {
+            return "granular";
+        }
+
         if self.buckets.is_some() {
             return "histogram";
         }

@@ -59,6 +59,7 @@ pub struct StatsdBuilder {
     recency_mask: MetricKindMask,
     prefix: Option<String>,
     global_tags: Option<IndexMap<String, String>>,
+    granular: bool,
 }
 
 impl StatsdBuilder {
@@ -75,6 +76,7 @@ impl StatsdBuilder {
             recency_mask: MetricKindMask::NONE,
             prefix: None,
             global_tags: None,
+            granular: false,
         }
     }
 
@@ -231,6 +233,11 @@ impl StatsdBuilder {
         self
     }
 
+    pub fn do_granular(mut self, val: bool) -> Self {
+        self.granular = val;
+        self
+    }
+
     /// Builds the recorder and exporter and installs them globally.
     ///
     /// When called from within a Tokio runtime, the exporter future is spawned directly
@@ -337,6 +344,7 @@ impl StatsdBuilder {
                 self.quantiles,
                 self.buckets,
                 self.bucket_overrides,
+                self.granular,
             ),
             global_tags: self.global_tags.unwrap_or_default(),
         };
