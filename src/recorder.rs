@@ -164,7 +164,26 @@ impl Inner {
         for (name, mut by_labels) in distributions.drain() {
             let mut wrote = false;
             for (labels, distribution) in by_labels.drain(..) {
-                let (sum, count) = match distribution {
+                let (skip, sum, count) = match distribution {
+                    Distribution::Granular(samples) => {
+                        wrote = true;
+                        for chunk in samples.chunks(100) {
+                            let value = itertools::join(chunk.iter().map(|&v| v.to_string()), ":");
+                            write_metric_line::<&str, String>(
+                                &mut output,
+                                self.prefix.as_deref(),
+                                &name,
+                                None,
+                                "d",
+                                &labels,
+                                None,
+                                value,
+                                None,
+                                None,
+                            );
+                        }
+                        (true, 0f64, 0u64)
+                    }
                     Distribution::Summary(summary, quantiles, sum) => {
                         let count = summary.count();
                         if count == 0 {
@@ -199,7 +218,7 @@ impl Inner {
                             );
                         }
 
-                        (sum, count as u64)
+                        (false, sum, count as u64)
                     }
                     Distribution::Histogram(histogram) => {
                         let count = histogram.count();
@@ -234,10 +253,13 @@ impl Inner {
                             None,
                         );
 
-                        (histogram.sum(), count)
+                        (false, histogram.sum(), count)
                     }
                 };
 
+                if skip {
+                    continue;
+                }
                 write_metric_line::<&str, f64>(
                     &mut output,
                     self.prefix.as_deref(),
