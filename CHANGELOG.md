@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased] - ReleaseDate
-
+### Added
+- Introduce the ability to split metric payload in smaller packets that fit MTU
 
 
 ## [0.1.0] - 21/07/2022
