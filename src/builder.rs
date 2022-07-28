@@ -191,6 +191,9 @@ impl StatsdBuilder {
         self
     }
 
+    /// Sets the maximum size of packets going out to the gateway.
+    ///
+    /// Defaults to 1432 bytes
     pub fn set_max_packet_size(mut self, size: usize) -> Self {
         self.max_packet_size = size;
         self
