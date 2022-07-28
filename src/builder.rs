@@ -59,6 +59,7 @@ pub struct StatsdBuilder {
     recency_mask: MetricKindMask,
     prefix: Option<String>,
     global_tags: Option<IndexMap<String, String>>,
+    max_packet_size: usize,
 }
 
 impl StatsdBuilder {
@@ -75,6 +76,7 @@ impl StatsdBuilder {
             recency_mask: MetricKindMask::NONE,
             prefix: None,
             global_tags: None,
+            max_packet_size: 1432,
         }
     }
 
@@ -189,6 +191,14 @@ impl StatsdBuilder {
         self
     }
 
+    /// Sets the maximum size of packets going out to the gateway.
+    ///
+    /// Defaults to 1432 bytes
+    pub fn set_max_packet_size(mut self, size: usize) -> Self {
+        self.max_packet_size = size;
+        self
+    }
+
     /// Adds a global prefix for every metric name.
     ///
     /// Global prefix is applied to all metrics. Its intended use is to introduce a configurable
@@ -296,6 +306,7 @@ impl StatsdBuilder {
     /// If there is an error while building the recorder and exporter, an error variant will be
     /// returned describing the error.
     pub fn build(self) -> Result<(StatsdRecorder, ExporterFuture), BuildError> {
+        let max_packet_size = self.max_packet_size;
         let exporter_config = self.exporter_config.clone();
         let recorder = self.build_recorder();
         let handle = recorder.handle();
@@ -311,7 +322,7 @@ impl StatsdBuilder {
                         tokio::time::sleep(interval).await;
 
                         let output = handle.render();
-                        match send_all(&client, output, &endpoint).await {
+                        match send_all(&client, output, &endpoint, max_packet_size).await {
                             Ok(_) => (),
                             Err(e) => error!("error sending request to push gateway: {:?}", e),
                         }
@@ -351,11 +362,54 @@ impl Default for StatsdBuilder {
     }
 }
 
-async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io::Result<()> {
+// Packets are split alone new lines because that's how the dogstatsd protocol works
+// so we look for \n in the buffer and try to put them together at that delimiter.
+// it would be nicer if the handler rendered the metrics already at the packet size.
+fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
+    let mut n_pos_iter = buf.iter();
+    let mut last_sent = 0;
+    let mut packets = vec![];
+    let mut acc = 0;
+
+    while let Some(next_send_candidate) = n_pos_iter.position(|&c| c == b'\n') {
+        acc += next_send_candidate + 1;
+        match acc.cmp(&max_packet_size) {
+            std::cmp::Ordering::Less => (), // check if there's a bigger opportunity
+            std::cmp::Ordering::Equal => {
+                // we can't be any bigger so save this position
+                packets.push((last_sent, last_sent + acc));
+                last_sent += acc;
+                acc = 0;
+            }
+            std::cmp::Ordering::Greater => {
+                // we've overshot, go back to the last value we could have sent
+                packets.push((last_sent, last_sent + acc - next_send_candidate - 1));
+                last_sent += acc - next_send_candidate - 1;
+                acc = 0;
+            }
+        }
+    }
+
+    // just in case we never found a big enough package to split as the last package
+    if last_sent < buf.len() {
+        packets.push((last_sent, buf.len()));
+    }
+
+    packets
+}
+
+async fn send_all(
+    client: &UdpSocket,
+    body: String,
+    endpoint: &SocketAddr,
+    max_packet_size: usize,
+) -> io::Result<()> {
     let buf = body.as_bytes();
+
     let mut sent = 0;
-    while sent < buf.len() {
-        match client.send_to(&buf[sent..], endpoint).await {
+    let packets = split_in_packets(buf, max_packet_size);
+    for (start, end) in packets {
+        match client.send_to(&buf[start..end], endpoint).await {
             Ok(nsent) => {
                 sent += nsent;
             }
@@ -364,16 +418,44 @@ async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io
             }
         }
     }
+    if sent != buf.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "sent different size than received",
+        ));
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Matcher, StatsdBuilder};
+    use super::{split_in_packets, Matcher, StatsdBuilder};
     use metrics::{Key, KeyName, Label, Recorder};
     use metrics_util::MetricKindMask;
     use quanta::Clock;
     use std::time::Duration;
+
+    #[test]
+    fn test_split_packet() {
+        let data = "123456789\n12345\n678\n";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 10), (10, 20)]);
+
+        let bytes = "12345\n".as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 6)]);
+
+        let data = "123456789\n12345\n6789\n";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 10), (10, 16), (16, 21)]);
+
+        let data = "12345";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 5)]);
+    }
 
     #[test]
     fn test_render() {

@@ -32,17 +32,6 @@ impl Inner {
             if !self.recency.should_store_counter(&key, gen, &self.registry) {
                 continue;
             }
-            // [11:00 PM] toby: or just do a pass over the values you collect, discarding anything with a zero value
-            // [11:00 PM] toby: and then don't actually emit it to statsd
-            // [11:01 PM] toby: and use a normal/sufficiently large idle timeout
-            // [11:01 PM] toby: unless you plan to have hundreds, thousands, etc, of unique-but-idle-or-maybe-never-updated-again metrics sitting around at any given time, that should be fine
-            // [11:02 PM] dialtone: I don't understand the zero value you mentioned, I don't think I would see a zero value for an actively updated metric, right?
-            // [11:03 PM] dialtone: I could keep the last value I flushed to statsd and subtract it from the current value I fetched
-            // [11:03 PM] toby: t=0: you query the registry, get all handles, do a consuming op (swap, clear_with, etc) and now those metrics are at their zero value
-            // [11:03 PM] dialtone: ah ok
-            // [11:03 PM] toby: t=1: only one of them has been updated since
-            // [11:03 PM] toby: every one but that one goes bye bye
-
             let (name, labels) = key_to_parts(&key, Some(&self.global_tags));
             let value = counter.get_inner().swap(0, Ordering::Acquire);
             let entry = counters
