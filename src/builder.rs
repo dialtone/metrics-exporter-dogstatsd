@@ -370,7 +370,6 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
 
     while let Some(next_send_candidate) = n_pos_iter.position(|&c| c == b'\n') {
         acc += next_send_candidate + 1;
-        dbg!(&packets, next_send_candidate, last_sent, acc);
         match acc.cmp(&max_packet_size) {
             std::cmp::Ordering::Less => (), // check if there's a bigger opportunity
             std::cmp::Ordering::Equal => {
