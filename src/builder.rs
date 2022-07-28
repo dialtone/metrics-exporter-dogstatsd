@@ -351,11 +351,46 @@ impl Default for StatsdBuilder {
     }
 }
 
+fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
+    let mut n_pos_iter = buf.iter();
+    let mut last_sent = 0;
+    let mut last_candidate = 0;
+    let mut packets = vec![];
+
+    while let Some(next_send_candidate) = n_pos_iter.position(|&c| c == b'\n') {
+        match (next_send_candidate - last_sent).cmp(&max_packet_size) {
+            std::cmp::Ordering::Less => (), // check if there's a bigger opportunity
+            std::cmp::Ordering::Equal => {
+                // we can't be any bigger so save this position
+                packets.push((last_sent, next_send_candidate));
+                last_sent = next_send_candidate;
+            }
+            std::cmp::Ordering::Greater => {
+                // we've overshot, go back to the last value we could have sent
+                packets.push((last_sent, last_candidate));
+                last_sent = last_candidate;
+            }
+        }
+        last_candidate = next_send_candidate;
+    }
+
+    // just in case we never found a big enough package to split as the last package
+    if last_sent < buf.len() {
+        packets.push((last_sent, buf.len()));
+    }
+
+    packets
+}
+
 async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io::Result<()> {
+    // 1432 max udp packet size
+    let max_udp_size = 1432;
     let buf = body.as_bytes();
+
     let mut sent = 0;
-    while sent < buf.len() {
-        match client.send_to(&buf[sent..], endpoint).await {
+    let packets = split_in_packets(buf, max_udp_size);
+    for (start, end) in packets {
+        match client.send_to(&buf[start..end], endpoint).await {
             Ok(nsent) => {
                 sent += nsent;
             }
@@ -363,6 +398,12 @@ async fn send_all(client: &UdpSocket, body: String, endpoint: &SocketAddr) -> io
                 return Err(e);
             }
         }
+    }
+    if sent != buf.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "sent different size than received",
+        ));
     }
     Ok(())
 }
