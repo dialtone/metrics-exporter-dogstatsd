@@ -372,6 +372,18 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
     let mut acc = 0;
 
     while let Some(next_send_candidate) = n_pos_iter.position(|&c| c == b'\n') {
+        // if the next metric is too big by itself, then just flush out what we've accumulated so
+        // far and push out this metric too right away
+        if next_send_candidate + 1 > max_packet_size {
+            if acc != 0 {
+                packets.push((last_sent, last_sent + acc));
+                last_sent += acc;
+                acc = 0;
+            }
+            packets.push((last_sent, last_sent + next_send_candidate + 1));
+            last_sent += next_send_candidate + 1;
+            continue;
+        }
         acc += next_send_candidate + 1;
         match acc.cmp(&max_packet_size) {
             std::cmp::Ordering::Less => (), // check if there's a bigger opportunity
@@ -382,20 +394,9 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
                 acc = 0;
             }
             std::cmp::Ordering::Greater => {
-                dbg!(last_sent, acc, next_send_candidate);
                 let next_sent = last_sent + acc - next_send_candidate - 1;
-
-                if last_sent == next_sent {
-                    // behave like equal, basically this is the case where a single metric
-                    // line is longer than the max_packet_size, we can't split it, so we
-                    // just let it be and let it error out on send, or not
-                    packets.push((last_sent, last_sent + acc));
-                    last_sent += acc;
-                } else {
-                    // we've overshot, go back to the last value we could have sent
-                    packets.push((last_sent, last_sent + acc - next_send_candidate - 1));
-                    last_sent += acc - next_send_candidate - 1;
-                }
+                packets.push((last_sent, next_sent));
+                last_sent = next_sent;
                 acc = 0;
             }
         }
@@ -422,6 +423,13 @@ async fn send_all(
     for (start, end) in packets {
         match client.send_to(&buf[start..end], endpoint).await {
             Ok(nsent) => {
+                if nsent != (end - start) {
+                    tracing::error!(
+                        "Somehow this UDP socket sent less bytes ({}) than it was asked ({})",
+                        nsent,
+                        end - start
+                    );
+                }
                 sent += nsent;
             }
             Err(e) => {
@@ -478,6 +486,19 @@ mod tests {
         let bytes = data.as_bytes();
         let packets = split_in_packets(bytes, 5);
         assert_eq!(packets, [(0, 7), (7, 10)]);
+        //
+        // // this test forces the second metric to be bigger than right size
+        let data = "789\n123456\n";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 5);
+        assert_eq!(packets, [(0, 4), (4, 11)]);
+
+        // this test forces the second metric to be bigger than right size with another metric
+        // afterwards
+        let data = "789\n123456\n789\n";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 5);
+        assert_eq!(packets, [(0, 4), (4, 11), (11, 15)]);
     }
 
     #[test]

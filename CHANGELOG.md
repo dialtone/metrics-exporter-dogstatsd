@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+### Fixed
+- fix more corner cases related to splitting packets
 
 ## [0.4.0] - 2022-08-08
+### Fixed
+- fixed a minor issue in splitting packets when a single metric was longer than max_packet_size
 
 ## [0.3.0] - 2022-08-08
 ### Fixed
-- fixed a minor issue in splitting packets when a single metric was longer than max_packet_size
+- mistaken release
 
 ## [0.2.0] - 2022-07-28
 ### Added
