@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - ReleaseDate
 
 ## [0.3.0] - 2022-08-08
-
+### Fixed
+- fixed a minor issue in splitting packets when a single metric was longer than max_packet_size
 
 ## [0.2.0] - 2022-07-28
 ### Added
