@@ -382,9 +382,20 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
                 acc = 0;
             }
             std::cmp::Ordering::Greater => {
-                // we've overshot, go back to the last value we could have sent
-                packets.push((last_sent, last_sent + acc - next_send_candidate - 1));
-                last_sent += acc - next_send_candidate - 1;
+                dbg!(last_sent, acc, next_send_candidate);
+                let next_sent = last_sent + acc - next_send_candidate - 1;
+
+                if last_sent == next_sent {
+                    // behave like equal, basically this is the case where a single metric
+                    // line is longer than the max_packet_size, we can't split it, so we
+                    // just let it be and let it error out on send, or not
+                    packets.push((last_sent, last_sent + acc));
+                    last_sent += acc;
+                } else {
+                    // we've overshot, go back to the last value we could have sent
+                    packets.push((last_sent, last_sent + acc - next_send_candidate - 1));
+                    last_sent += acc - next_send_candidate - 1;
+                }
                 acc = 0;
             }
         }
@@ -414,7 +425,9 @@ async fn send_all(
                 sent += nsent;
             }
             Err(e) => {
-                return Err(e);
+                // we just log the error here because we can just skip sending one packet and try
+                // sending the other ones anyway
+                tracing::error!("error encountered while sending {:?}", e);
             }
         }
     }
@@ -455,6 +468,16 @@ mod tests {
         let bytes = data.as_bytes();
         let packets = split_in_packets(bytes, 10);
         assert_eq!(packets, [(0, 5)]);
+    }
+
+    #[test]
+    fn test_broken_split_packet() {
+        // this test explicitly forces a first metric that is beyond the value that was set
+        // in max_packet_size
+        let data = "123456\n789";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 5);
+        assert_eq!(packets, [(0, 7), (7, 10)]);
     }
 
     #[test]
