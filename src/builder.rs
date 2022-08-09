@@ -370,20 +370,9 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
     let mut last_sent = 0;
     let mut packets = vec![];
     let mut acc = 0;
+    let mut previous_acc = acc;
 
     while let Some(next_send_candidate) = n_pos_iter.position(|&c| c == b'\n') {
-        // if the next metric is too big by itself, then just flush out what we've accumulated so
-        // far and push out this metric too right away
-        if next_send_candidate + 1 > max_packet_size {
-            if acc != 0 {
-                packets.push((last_sent, last_sent + acc));
-                last_sent += acc;
-                acc = 0;
-            }
-            packets.push((last_sent, last_sent + next_send_candidate + 1));
-            last_sent += next_send_candidate + 1;
-            continue;
-        }
         acc += next_send_candidate + 1;
         match acc.cmp(&max_packet_size) {
             std::cmp::Ordering::Less => (), // check if there's a bigger opportunity
@@ -394,20 +383,31 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
                 acc = 0;
             }
             std::cmp::Ordering::Greater => {
-                // have to backtrack for a second
-                let next_sent = last_sent + acc - next_send_candidate - 1;
-                packets.push((last_sent, next_sent));
-                last_sent = next_sent;
-                // then go back to current, we know this value is less than max_packet_size
-                // because we have a check for that at the top of this loop
-                acc = next_send_candidate + 1;
+                // we gone over, if we have a previous accumulator that has something,
+                // flush it out.
+                if previous_acc != 0 {
+                    packets.push((last_sent, last_sent + previous_acc));
+                    last_sent += previous_acc;
+                    acc = next_send_candidate + 1;
+                }
+
+                // if the currently evaluated row is already too big on its own
+                // we just flush it out and start with a new accumulator
+                if next_send_candidate + 1 > max_packet_size {
+                    packets.push((last_sent, last_sent + acc));
+                    last_sent += acc;
+                    acc = 0;
+                }
             }
         }
+        previous_acc = acc;
     }
 
     if acc != 0 {
         // somehow we finished without pushing data, probably because we got to the end of the loop
-        // without a \n on the last metric line
+        // without a \n on the last metric line, however we might already be at max length on the
+        // package here, so if we don't push what we've accumulated we risk going over with the
+        // next package sent.
         packets.push((last_sent, last_sent + acc));
         last_sent += acc;
     }
