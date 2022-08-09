@@ -394,14 +394,23 @@ fn split_in_packets(buf: &[u8], max_packet_size: usize) -> Vec<(usize, usize)> {
                 acc = 0;
             }
             std::cmp::Ordering::Greater => {
+                // have to backtrack for a second
                 let next_sent = last_sent + acc - next_send_candidate - 1;
                 packets.push((last_sent, next_sent));
                 last_sent = next_sent;
-                acc = 0;
+                // then go back to current, we know this value is less than max_packet_size
+                // because we have a check for that at the top of this loop
+                acc = next_send_candidate + 1;
             }
         }
     }
 
+    if acc != 0 {
+        // somehow we finished without pushing data, probably because we got to the end of the loop
+        // without a \n on the last metric line
+        packets.push((last_sent, last_sent + acc));
+        last_sent += acc;
+    }
     // just in case we never found a big enough package to split as the last package
     if last_sent < buf.len() {
         packets.push((last_sent, buf.len()));
@@ -462,6 +471,10 @@ mod tests {
         let bytes = data.as_bytes();
         let packets = split_in_packets(bytes, 10);
         assert_eq!(packets, [(0, 10), (10, 20)]);
+        assert_eq!(
+            bytes[0..10],
+            [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'\n']
+        );
 
         let bytes = "12345\n".as_bytes();
         let packets = split_in_packets(bytes, 10);
@@ -476,6 +489,49 @@ mod tests {
         let bytes = data.as_bytes();
         let packets = split_in_packets(bytes, 10);
         assert_eq!(packets, [(0, 5)]);
+    }
+
+    #[test]
+    fn test_split_no_end_newline() {
+        let data = "1234\n\
+            1234567";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 5), (5, 12)]);
+
+        let data = "1234\n\
+            1234\n\
+            1234\n\
+            1234567";
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+        assert_eq!(packets, [(0, 10), (10, 15), (15, 22)]);
+    }
+
+    fn print_packets(buf: &[u8], packets: &[(usize, usize)]) {
+        println!("Printing packets:");
+        for (start, end) in packets {
+            println!("---------------");
+            println!("{}", std::str::from_utf8(&buf[*start..*end]).unwrap());
+        }
+    }
+    #[test]
+    fn test_big_metric_dump() {
+        let splits = [(0, 5), (5, 11), (11, 19), (19, 29), (29, 30)];
+        let data = "\
+         1234\n\
+         12345\n\
+         1234\n\
+         12\n\
+         12345\n\
+         123\n\
+        \n";
+
+        let bytes = data.as_bytes();
+        let packets = split_in_packets(bytes, 10);
+
+        print_packets(bytes, &packets);
+        assert_eq!(packets, splits);
     }
 
     #[test]
