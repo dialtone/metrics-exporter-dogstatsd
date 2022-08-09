@@ -1,6 +1,6 @@
 [package]
 name = "metrics-exporter-dogstatsd"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Valentino Volonghi <dialtone@nextroll.com>"]
 edition = "2021"
 rust-version="1.56.1"
