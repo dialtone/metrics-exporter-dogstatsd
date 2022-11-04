@@ -21,11 +21,10 @@ use crate::recorder::{Inner, StatsdRecorder};
 use crate::registry::AtomicStorage;
 
 use quanta::Clock;
-use tokio::net::UdpSocket;
-use tokio::runtime;
+use tokio::{net::UdpSocket, runtime};
 use tracing::error;
 
-use std::net::{AddrParseError, SocketAddr};
+use std::net::{SocketAddr, ToSocketAddrs};
 
 type ExporterFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'static>>;
 
@@ -92,12 +91,20 @@ impl StatsdBuilder {
         interval: Duration,
     ) -> Result<Self, BuildError>
     where
-        T: AsRef<str>,
+        T: ToSocketAddrs,
     {
+        let endpoint = endpoint
+            .to_socket_addrs()
+            .map_err(|e| BuildError::InvalidPushGatewayEndpoint(e.to_string()))?
+            .next() // just use the first address we resolve to
+            .ok_or_else(|| {
+                BuildError::InvalidPushGatewayEndpoint(
+                    "to_socket_addrs returned an empty iterator".to_string(),
+                )
+            })?;
+
         self.exporter_config = ExporterConfig::PushGateway {
-            endpoint: endpoint.as_ref().parse().map_err(|e: AddrParseError| {
-                BuildError::InvalidPushGatewayEndpoint(e.to_string())
-            })?,
+            endpoint: endpoint,
             interval,
         };
 
@@ -315,7 +322,7 @@ impl StatsdBuilder {
             ExporterConfig::Unconfigured => Err(BuildError::MissingExporterConfiguration),
             ExporterConfig::PushGateway { endpoint, interval } => {
                 let exporter = async move {
-                    let client = UdpSocket::bind("0.0.0.0:0").await?;
+                    let client = UdpSocket::bind("[::]:0").await?;
 
                     loop {
                         // Sleep for `interval` amount of time, and then do a push.
