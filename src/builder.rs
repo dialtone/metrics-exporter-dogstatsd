@@ -1034,4 +1034,41 @@ mod tests {
 
         assert_eq!(rendered, expected_counter);
     }
+
+    #[test]
+    pub fn test_global_distribution() {
+        let recorder = StatsdBuilder::new().set_distribution().build_recorder();
+
+        let key_name = KeyName::from("distn");
+        let key = Key::from_name(key_name);
+        let hist = recorder.register_histogram(&key);
+
+        hist.record(12.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter = "distn:12|d\ndistn.avg:12|g\ndistn.sum:12|g\ndistn.count:1|g\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
+
+    #[test]
+    pub fn test_match_distribution() {
+        let recorder = StatsdBuilder::new()
+            .set_distribution_for_metric(Matcher::Suffix("-dist".to_string()))
+            .build_recorder();
+
+        let key_name = KeyName::from("data-dist");
+        let key = Key::from_name(key_name);
+        let hist = recorder.register_histogram(&key);
+
+        hist.record(12.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter =
+            "data_dist:12|d\ndata_dist.avg:12|g\ndata_dist.sum:12|g\ndata_dist.count:1|g\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
 }
