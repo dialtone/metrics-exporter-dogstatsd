@@ -27,7 +27,7 @@ pub enum Distribution {
     ///
     /// Sends values directly to datadog, so that combined quantiles can be
     /// computed accurately.
-    Distribution(DatadogDistribution),
+    Distribution(Vec<f64>),
 }
 
 impl Distribution {
@@ -57,7 +57,7 @@ impl Distribution {
             }
             Distribution::Distribution(d) => {
                 for (sample, _) in samples.iter().copied() {
-                    d.add(sample);
+                    d.push(sample);
                 }
             }
         }
@@ -96,7 +96,7 @@ impl DistributionBuilder {
             for (matcher, buckets) in overrides.iter() {
                 if matcher.matches(name) {
                     return if buckets.is_empty() {
-                        Distribution::Distribution(DatadogDistribution::new())
+                        Distribution::Distribution(Vec::new())
                     } else {
                         Distribution::new_histogram(buckets)
                     };
@@ -106,7 +106,7 @@ impl DistributionBuilder {
 
         if let Some(ref buckets) = self.buckets {
             if buckets.is_empty() {
-                Distribution::Distribution(DatadogDistribution::new())
+                Distribution::Distribution(Vec::new())
             } else {
                 Distribution::new_histogram(buckets)
             }
@@ -117,19 +117,27 @@ impl DistributionBuilder {
 
     /// Returns the distribution type for the given metric key.
     pub fn get_distribution_type(&self, name: &str) -> &str {
-        if self.buckets.is_some() {
-            return "histogram";
-        }
-
         if let Some(ref overrides) = self.bucket_overrides {
-            for (matcher, _) in overrides.iter() {
+            for (matcher, buckets) in overrides.iter() {
                 if matcher.matches(name) {
-                    return "histogram";
+                    return if buckets.is_empty() {
+                        "distribution"
+                    } else {
+                        "histogram"
+                    };
                 }
             }
         }
 
-        "summary"
+        if let Some(ref buckets) = self.buckets {
+            if buckets.is_empty() {
+                "distribution"
+            } else {
+                "histogram"
+            }
+        } else {
+            "summary"
+        }
     }
 }
 
@@ -292,47 +300,6 @@ impl RollingSummary {
     #[cfg(test)]
     fn buckets(&self) -> &Vec<Bucket> {
         &self.buckets
-    }
-}
-
-/// A `DatadogDistribution` manages a list of values to be sent to datadog.
-#[derive(Clone)]
-pub struct DatadogDistribution {
-    // The values to be sent
-    values: Vec<f64>,
-}
-
-impl Default for DatadogDistribution {
-    fn default() -> Self {
-        DatadogDistribution::new()
-    }
-}
-
-impl DatadogDistribution {
-    /// Create a new `DatadogDistribution` with the given number of `buckets` and `bucket-duration`.
-    ///
-    /// The summary will store quantiles over `buckets * bucket_duration` seconds.
-    pub const fn new() -> DatadogDistribution {
-        DatadogDistribution { values: Vec::new() }
-    }
-
-    /// Add a sample `value` to the `DatadogDistribution`.
-    pub fn add(&mut self, value: f64) {
-        self.values.push(value);
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = f64> + '_ {
-        self.values.iter().copied()
-    }
-
-    /// Whether or not this summary is empty.
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    /// Gets the totoal number of samples this summary has seen so far.
-    pub fn count(&self) -> usize {
-        self.values.len()
     }
 }
 

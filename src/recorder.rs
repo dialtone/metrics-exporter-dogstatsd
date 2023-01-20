@@ -226,9 +226,9 @@ impl Inner {
                         (histogram.sum(), count)
                     }
                     Distribution::Distribution(dist) => {
-                        let count = dist.count();
+                        let count = dist.len();
                         let mut sum = 0.0;
-                        for v in dist.iter() {
+                        for v in dist.iter().copied() {
                             sum += v;
                             wrote = true;
                             write_metric_line::<f64, f64>(
@@ -244,7 +244,6 @@ impl Inner {
                                 None,
                             );
                         }
-
                         (sum, count as u64)
                     }
                 };
