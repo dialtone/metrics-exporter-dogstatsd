@@ -52,7 +52,16 @@ impl ExporterConfig {
 pub struct StatsdBuilder {
     exporter_config: ExporterConfig,
     quantiles: Vec<Quantile>,
+    /// The default kind of histogram
+    ///
+    /// Some([]) => Distribution
+    /// None => Summary
+    /// Some(_) => Histogram
     buckets: Option<Vec<f64>>,
+    /// An overridden kind of histogram
+    ///
+    /// vec![] => Distribution
+    /// _ => Histogram
     bucket_overrides: Option<HashMap<Matcher, Vec<f64>>>,
     idle_timeout: Option<Duration>,
     recency_mask: MetricKindMask,
@@ -135,6 +144,16 @@ impl StatsdBuilder {
         Ok(self)
     }
 
+    /// Sets to send histograms as a [datadog `Distribution`](https://docs.datadoghq.com/metrics/distributions/)
+    ///
+    /// Note that a `Distribution` requires that we send all values to statsd,
+    /// which means we could use a lot of memory, so this is ideal for
+    /// infrequent events.
+    pub fn set_distribution(mut self) -> Self {
+        self.buckets = Some(Vec::new());
+        self
+    }
+
     /// Sets the buckets to use when rendering histograms.
     ///
     /// Buckets values represent the higher bound of each buckets.  If buckets are set, then all
@@ -180,6 +199,18 @@ impl StatsdBuilder {
         let buckets = self.bucket_overrides.get_or_insert_with(HashMap::new);
         buckets.insert(matcher.sanitized(), values.to_vec());
         Ok(self)
+    }
+
+    /// Sets to send a [`Distribution`](https://docs.datadoghq.com/metrics/distributions/) for a specific pattern.
+    ///
+    /// The match pattern can be a full match (equality), prefix match, or suffix match.  The
+    /// matchers are applied in that order if two or more matchers would apply to a single metric.
+    /// That is to say, if a full match and a prefix match applied to a metric, the full match would
+    /// win, and if a prefix match and a suffix match applied to a metric, the prefix match would win.
+    pub fn set_distribution_for_metric(mut self, matcher: Matcher) -> Self {
+        let buckets = self.bucket_overrides.get_or_insert_with(HashMap::new);
+        buckets.insert(matcher.sanitized(), Vec::new());
+        self
     }
 
     /// Adds a global tag to this exporter.
@@ -1007,6 +1038,43 @@ mod tests {
         let handle = recorder.handle();
         let rendered = handle.render();
         let expected_counter = "yee_haw_lets_go:1|c|#foo_:foo,øhno:_yeet_ies__\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
+
+    #[test]
+    pub fn test_global_distribution() {
+        let recorder = StatsdBuilder::new().set_distribution().build_recorder();
+
+        let key_name = KeyName::from("distn");
+        let key = Key::from_name(key_name);
+        let hist = recorder.register_histogram(&key);
+
+        hist.record(12.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter = "distn:12|d\ndistn.avg:12|g\ndistn.sum:12|g\ndistn.count:1|g\n\n";
+
+        assert_eq!(rendered, expected_counter);
+    }
+
+    #[test]
+    pub fn test_match_distribution() {
+        let recorder = StatsdBuilder::new()
+            .set_distribution_for_metric(Matcher::Suffix("-dist".to_string()))
+            .build_recorder();
+
+        let key_name = KeyName::from("data-dist");
+        let key = Key::from_name(key_name);
+        let hist = recorder.register_histogram(&key);
+
+        hist.record(12.0);
+
+        let handle = recorder.handle();
+        let rendered = handle.render();
+        let expected_counter =
+            "data_dist:12|d\ndata_dist.avg:12|g\ndata_dist.sum:12|g\ndata_dist.count:1|g\n\n";
 
         assert_eq!(rendered, expected_counter);
     }

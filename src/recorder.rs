@@ -225,6 +225,27 @@ impl Inner {
 
                         (histogram.sum(), count)
                     }
+                    Distribution::Distribution(dist) => {
+                        let count = dist.len();
+                        let mut sum = 0.0;
+                        for v in dist.iter().copied() {
+                            sum += v;
+                            wrote = true;
+                            write_metric_line::<f64, f64>(
+                                &mut output,
+                                self.prefix.as_deref(),
+                                &name,
+                                None,
+                                "d",
+                                &labels,
+                                None,
+                                v,
+                                None,
+                                None,
+                            );
+                        }
+                        (sum, count as u64)
+                    }
                 };
 
                 write_metric_line::<&str, f64>(

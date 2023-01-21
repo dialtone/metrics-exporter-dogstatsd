@@ -23,6 +23,11 @@ pub enum Distribution {
     /// requests were faster than 200ms, and 99% of requests were faster than
     /// 1000ms, etc.
     Summary(RollingSummary, Arc<Vec<Quantile>>, f64),
+    /// A datadog Distribution.
+    ///
+    /// Sends values directly to datadog, so that combined quantiles can be
+    /// computed accurately.
+    Distribution(Vec<f64>),
 }
 
 impl Distribution {
@@ -48,6 +53,11 @@ impl Distribution {
                 for (sample, ts) in samples {
                     hist.add(*sample, *ts);
                     *sum += *sample;
+                }
+            }
+            Distribution::Distribution(d) => {
+                for (sample, _) in samples.iter().copied() {
+                    d.push(sample);
                 }
             }
         }
@@ -85,33 +95,49 @@ impl DistributionBuilder {
         if let Some(ref overrides) = self.bucket_overrides {
             for (matcher, buckets) in overrides.iter() {
                 if matcher.matches(name) {
-                    return Distribution::new_histogram(buckets);
+                    return if buckets.is_empty() {
+                        Distribution::Distribution(Vec::new())
+                    } else {
+                        Distribution::new_histogram(buckets)
+                    };
                 }
             }
         }
 
         if let Some(ref buckets) = self.buckets {
-            return Distribution::new_histogram(buckets);
+            if buckets.is_empty() {
+                Distribution::Distribution(Vec::new())
+            } else {
+                Distribution::new_histogram(buckets)
+            }
+        } else {
+            Distribution::new_summary(self.quantiles.clone())
         }
-
-        Distribution::new_summary(self.quantiles.clone())
     }
 
     /// Returns the distribution type for the given metric key.
     pub fn get_distribution_type(&self, name: &str) -> &str {
-        if self.buckets.is_some() {
-            return "histogram";
-        }
-
         if let Some(ref overrides) = self.bucket_overrides {
-            for (matcher, _) in overrides.iter() {
+            for (matcher, buckets) in overrides.iter() {
                 if matcher.matches(name) {
-                    return "histogram";
+                    return if buckets.is_empty() {
+                        "distribution"
+                    } else {
+                        "histogram"
+                    };
                 }
             }
         }
 
-        "summary"
+        if let Some(ref buckets) = self.buckets {
+            if buckets.is_empty() {
+                "distribution"
+            } else {
+                "histogram"
+            }
+        } else {
+            "summary"
+        }
     }
 }
 
