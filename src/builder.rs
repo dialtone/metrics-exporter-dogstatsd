@@ -112,10 +112,7 @@ impl StatsdBuilder {
                 )
             })?;
 
-        self.exporter_config = ExporterConfig::PushGateway {
-            endpoint: endpoint,
-            interval,
-        };
+        self.exporter_config = ExporterConfig::PushGateway { endpoint, interval };
 
         Ok(self)
     }
