@@ -1,6 +1,6 @@
-use portable_atomic::AtomicU64;
 use std::sync::Arc;
 
+use metrics::atomics::AtomicU64;
 use metrics::HistogramFn;
 use metrics_util::registry::GenerationalStorage;
 use metrics_util::AtomicBucket;
