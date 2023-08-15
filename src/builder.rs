@@ -22,6 +22,7 @@ use crate::registry::AtomicStorage;
 
 use quanta::Clock;
 use tokio::{net::UdpSocket, runtime};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -68,6 +69,8 @@ pub struct StatsdBuilder {
     prefix: Option<String>,
     global_tags: Option<IndexMap<String, String>>,
     max_packet_size: usize,
+
+    cancel_token: Option<CancellationToken>,
 }
 
 impl StatsdBuilder {
@@ -85,6 +88,7 @@ impl StatsdBuilder {
             prefix: None,
             global_tags: None,
             max_packet_size: 1432,
+            cancel_token: None,
         }
     }
 
@@ -276,6 +280,28 @@ impl StatsdBuilder {
         self
     }
 
+    /// Sets a cancellation token for the exporter loop.
+    ///
+    /// If the token is cancelled, the async exporter loop will send any outstanding metrics and
+    /// then return. This can be combined with custom exporter spawning logic to achieve clean
+    /// shutdown. For example:
+    ///
+    /// ```ignore
+    /// let cancel_token = tokio_util::sync::CancellationToken::new();
+    /// let builder = StatsdBuilder::new().set_cancellation_token(cancel_token.clone());
+    /// let (recorder, exporter) = builder.build().expect("failed to build recorder/exporter");
+    /// let handle = tokio::spawn(exporter);
+    /// metrics::set_boxed_recorder(Box::new(recorder))?;
+    /// // main application logic here
+    /// cancel_token.cancel();
+    /// handle.await?;
+    /// ```
+    #[must_use]
+    pub fn set_cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.cancel_token = Some(token);
+        self
+    }
+
     /// Builds the recorder and exporter and installs them globally.
     ///
     /// When called from within a Tokio runtime, the exporter future is spawned directly
@@ -340,9 +366,10 @@ impl StatsdBuilder {
     ///
     /// If there is an error while building the recorder and exporter, an error variant will be
     /// returned describing the error.
-    pub fn build(self) -> Result<(StatsdRecorder, ExporterFuture), BuildError> {
+    pub fn build(mut self) -> Result<(StatsdRecorder, ExporterFuture), BuildError> {
         let max_packet_size = self.max_packet_size;
         let exporter_config = self.exporter_config.clone();
+        let cancel_token = self.cancel_token.take().unwrap_or_default();
         let recorder = self.build_recorder();
         let handle = recorder.handle();
 
@@ -354,14 +381,22 @@ impl StatsdBuilder {
 
                     loop {
                         // Sleep for `interval` amount of time, and then do a push.
-                        tokio::time::sleep(interval).await;
+                        tokio::select! {
+                            _ = cancel_token.cancelled() => {}
+                            _ = tokio::time::sleep(interval) => {}
+                        };
 
                         let output = handle.render();
                         match send_all(&client, output, &endpoint, max_packet_size).await {
                             Ok(_) => (),
                             Err(e) => error!("error sending request to push gateway: {:?}", e),
                         }
+
+                        if cancel_token.is_cancelled() {
+                            break;
+                        }
                     }
+                    Ok(())
                 };
 
                 Ok((recorder, Box::pin(exporter)))
