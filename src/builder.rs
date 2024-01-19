@@ -94,40 +94,11 @@ impl StatsdBuilder {
 
     /// Configures the exporter to push periodic requests to a statsd agent
     ///
-    /// This method is deprecated in favor of [`with_gateway`]().  If you use
-    /// this method, then the `endpoint` will be converted into an IP address
-    /// during this call, which means that the exporter may be broken if the IP
-    /// address of the endpoint changes while the exporter is running.
-    ///
-    /// ## Errors
-    ///
-    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error
-    /// variant will be returned describing the error.
-    #[deprecated = "use with_gateway instead"]
-    pub fn with_push_gateway<T>(self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
-    where
-        T: ToSocketAddrs,
-    {
-        let endpoint = endpoint
-            .to_socket_addrs()
-            .map_err(|e| BuildError::InvalidPushGatewayEndpoint(e.to_string()))?
-            .next() // just use the first address we resolve to
-            .ok_or_else(|| {
-                BuildError::InvalidPushGatewayEndpoint(
-                    "to_socket_addrs returned an empty iterator".to_string(),
-                )
-            })?;
-
-        self.with_gateway(endpoint, interval)
-    }
-
-    /// Configures the exporter to push periodic requests to a statsd agent
-    ///
     /// ## Errors
     ///
     /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
     /// returned describing the error.
-    pub fn with_gateway<T>(mut self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
+    pub fn with_push_gateway<T>(mut self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
     where
         T: ToSocketAddrs + Sync + Send + 'static,
     {
