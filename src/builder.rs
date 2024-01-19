@@ -31,7 +31,11 @@ type ExporterFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'stat
 #[derive(Clone)]
 enum ExporterConfig {
     PushGateway {
-        endpoint: SocketAddr,
+        /// The endpoint stored as a closure
+        ///
+        /// The idea is that we can resolve the endpoint each time we send a
+        /// message, in case the IP address changes (as happens in Kubernetes).
+        endpoint: std::sync::Arc<dyn Fn() -> Option<SocketAddr> + Sync + Send>,
         interval: Duration,
     },
 
@@ -90,15 +94,17 @@ impl StatsdBuilder {
 
     /// Configures the exporter to push periodic requests to a statsd agent
     ///
+    /// This method is deprecated in favor of [`with_gateway`]().  If you use
+    /// this method, then the `endpoint` will be converted into an IP address
+    /// during this call, which means that the exporter may be broken if the IP
+    /// address of the endpoint changes while the exporter is running.
+    ///
     /// ## Errors
     ///
-    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
-    /// returned describing the error.
-    pub fn with_push_gateway<T>(
-        mut self,
-        endpoint: T,
-        interval: Duration,
-    ) -> Result<Self, BuildError>
+    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error
+    /// variant will be returned describing the error.
+    #[deprecated = "use with_gateway instead"]
+    pub fn with_push_gateway<T>(self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
     where
         T: ToSocketAddrs,
     {
@@ -111,6 +117,37 @@ impl StatsdBuilder {
                     "to_socket_addrs returned an empty iterator".to_string(),
                 )
             })?;
+
+        self.with_gateway(endpoint, interval)
+    }
+
+    /// Configures the exporter to push periodic requests to a statsd agent
+    ///
+    /// ## Errors
+    ///
+    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
+    /// returned describing the error.
+    pub fn with_gateway<T>(mut self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
+    where
+        T: ToSocketAddrs + Sync + Send + 'static,
+    {
+        // First confirm that we can resolve the endpoint right now, so we can
+        // return an error immediately if it's invalid.
+        endpoint
+            .to_socket_addrs()
+            .map_err(|e| BuildError::InvalidPushGatewayEndpoint(e.to_string()))?
+            .next() // just use the first address we resolve to
+            .ok_or_else(|| {
+                BuildError::InvalidPushGatewayEndpoint(
+                    "to_socket_addrs returned an empty iterator".to_string(),
+                )
+            })?;
+        let endpoint = std::sync::Arc::new(move || {
+            endpoint
+                .to_socket_addrs()
+                .ok()
+                .and_then(|mut iter| iter.next())
+        });
 
         self.exporter_config = ExporterConfig::PushGateway { endpoint, interval };
 
@@ -357,6 +394,10 @@ impl StatsdBuilder {
                         tokio::time::sleep(interval).await;
 
                         let output = handle.render();
+                        let Some(endpoint) = endpoint() else {
+                            tracing::error!("error resolving dogstatsd endpoint");
+                            continue;
+                        };
                         match send_all(&client, output, &endpoint, max_packet_size).await {
                             Ok(_) => (),
                             Err(e) => error!("error sending request to push gateway: {:?}", e),
