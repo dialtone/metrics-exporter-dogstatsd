@@ -98,7 +98,11 @@ impl StatsdBuilder {
     ///
     /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
     /// returned describing the error.
-    pub fn with_push_gateway<T>(mut self, endpoint: T, interval: Duration) -> Result<Self, BuildError>
+    pub fn with_push_gateway<T>(
+        mut self,
+        endpoint: T,
+        interval: Duration,
+    ) -> Result<Self, BuildError>
     where
         T: ToSocketAddrs + Sync + Send + 'static,
     {
