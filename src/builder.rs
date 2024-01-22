@@ -398,7 +398,7 @@ impl StatsdBuilder {
                 let exporter = async move {
                     loop {
                         // Sleep for `interval` amount of time, and then do a push.
-                        std::thread::sleep(interval);
+                        tokio::time::sleep(interval).await;
                         let output = handle.render();
                         if let Err(e) = socket.connect(&path) {
                             error!("error connecting to socket {path:?}: {e}");
