@@ -302,14 +302,33 @@ impl StatsdBuilder {
 
     /// Builds the recorder and exporter and installs them globally.
     ///
-    /// When called from within a Tokio runtime, the exporter future is spawned directly
-    /// into the runtime.  Otherwise, a new single-threaded Tokio runtime is created
-    /// on a background thread, and the exporter is spawned there.
+    /// When called from within a Tokio runtime, the exporter future is spawned
+    /// directly into the runtime.  Otherwise, a new single-threaded Tokio
+    /// runtime is created on a background thread, and the exporter is spawned
+    /// there.
+    ///
+    /// # Example
+    /// Here we write to a named socket with path `socket` (except in the test
+    /// it is a temporary file):
+    /// ```
+    /// # use metrics_exporter_dogstatsd::StatsdBuilder;
+    /// # use std::io::Read;
+    /// # let socket = tempfile::NamedTempFile::new().unwrap();
+    /// StatsdBuilder::new()
+    ///     .with_named_socket(&socket, std::time::Duration::from_secs(1)).unwrap()
+    ///     .install()
+    ///     .unwrap();
+    /// // metrics are now being exported to the given socket
+    /// metrics::increment_counter!("tests.counter");
+    /// std::thread::sleep(std::time::Duration::from_secs(2));
+    /// assert_eq!(std::fs::read_to_string(&socket).unwrap(), "tests.counter:1|c\n\n");
+    /// ```
     ///
     /// ## Errors
     ///
-    /// If there is an error while either building the recorder and exporter, or installing the
-    /// recorder and exporter, an error variant will be returned describing the error.
+    /// If there is an error while either building the recorder and exporter, or
+    /// installing the recorder and exporter, an error variant will be returned
+    /// describing the error.
     pub fn install(self) -> Result<(), BuildError> {
         let recorder = if let Ok(handle) = runtime::Handle::try_current() {
             let (recorder, exporter) = {
