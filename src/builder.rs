@@ -110,10 +110,10 @@ impl StatsdBuilder {
     {
         let endpoint = endpoint
             .to_socket_addrs()
-            .map_err(|e| BuildError::InvalidPushGatewayEndpoint(e.to_string()))?
+            .map_err(|e| BuildError::InvalidPushGateway(e.to_string()))?
             .next() // just use the first address we resolve to
             .ok_or_else(|| {
-                BuildError::InvalidPushGatewayEndpoint(
+                BuildError::InvalidPushGateway(
                     "to_socket_addrs returned an empty iterator".to_string(),
                 )
             })?;
@@ -136,12 +136,12 @@ impl StatsdBuilder {
     ) -> Result<Self, BuildError> {
         let path = path.as_ref().to_path_buf();
         let socket = UnixStream::connect(&path).await.map_err(|e| {
-            BuildError::InvalidPushGatewayEndpoint(format!(
+            BuildError::InvalidPushGateway(format!(
                 "Unable to open socket at {path:?}: {e}"
             ))
         })?;
         socket.writable().await.map_err(|e| {
-            BuildError::InvalidPushGatewayEndpoint(format!(
+            BuildError::InvalidPushGateway(format!(
                 "Unable to write to socket at {path:?}: {e}"
             ))
         })?;
