@@ -391,7 +391,7 @@ impl StatsdBuilder {
                 Ok((recorder, Box::pin(exporter)))
             }
             ExporterConfig::SocketGateway { path, interval } => {
-                let socket = UnixDatagram::bind(&path).map_err(|e| {
+                let socket = UnixDatagram::unbound().map_err(|e| {
                     BuildError::InvalidPushGateway(format!("Failed to create unbound socket: {e}"))
                 })?;
 
