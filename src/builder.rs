@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::future::Future;
-use std::io;
+use std::io::{self, Write};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -28,12 +29,13 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 type ExporterFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'static>>;
 
-#[derive(Clone)]
 enum ExporterConfig {
     PushGateway {
         endpoint: SocketAddr,
         interval: Duration,
     },
+    /// Write data to a path, probably to a [unix domain socket](https://docs.datadoghq.com/developers/dogstatsd/unix_socket/?tab=kubernetes)
+    FileGateway { file: File, interval: Duration },
 
     #[allow(dead_code)]
     Unconfigured,
@@ -43,6 +45,7 @@ impl ExporterConfig {
     fn as_type_str(&self) -> &'static str {
         match self {
             Self::PushGateway { .. } => "push-gateway",
+            Self::FileGateway { .. } => "file-gatewy",
             Self::Unconfigured => "unconfigured,",
         }
     }
@@ -113,6 +116,27 @@ impl StatsdBuilder {
             })?;
 
         self.exporter_config = ExporterConfig::PushGateway { endpoint, interval };
+
+        Ok(self)
+    }
+
+    /// Configures the exporter to push periodic requests to a file (presumably a named socket)
+    ///
+    /// ## Errors
+    ///
+    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
+    /// returned describing the error.
+    pub fn with_named_socket(
+        mut self,
+        path: impl AsRef<std::path::Path>,
+        interval: Duration,
+    ) -> Result<Self, BuildError> {
+        let path = path.as_ref().to_path_buf();
+        let file = File::create(&path).map_err(|e| {
+            BuildError::InvalidPushGatewayEndpoint(format!("Unable to write to {path:?}: {e}"))
+        })?;
+
+        self.exporter_config = ExporterConfig::FileGateway { file, interval };
 
         Ok(self)
     }
@@ -342,11 +366,10 @@ impl StatsdBuilder {
     /// returned describing the error.
     pub fn build(self) -> Result<(StatsdRecorder, ExporterFuture), BuildError> {
         let max_packet_size = self.max_packet_size;
-        let exporter_config = self.exporter_config.clone();
         let recorder = self.build_recorder();
         let handle = recorder.handle();
 
-        match exporter_config {
+        match self.exporter_config {
             ExporterConfig::Unconfigured => Err(BuildError::MissingExporterConfiguration),
             ExporterConfig::PushGateway { endpoint, interval } => {
                 let exporter = async move {
@@ -366,25 +389,49 @@ impl StatsdBuilder {
 
                 Ok((recorder, Box::pin(exporter)))
             }
+            ExporterConfig::FileGateway { mut file, interval } => {
+                // Some of the code paths are a little ridiculous: there is no
+                // benefit to using tokio for writing to a file, so we simply
+                // spawn an OS thread to do the writing.  In general, if we are
+                // using `FileGateway` our life would be easier if we didn't use
+                // tokio at all.  (And the code would still equally well support
+                // use within an async environment.)
+                let exporter = async move {
+                    std::thread::spawn(move || {
+                        loop {
+                            // Sleep for `interval` amount of time, and then do a push.
+                            std::thread::sleep(interval);
+                            let output = handle.render();
+                            match file.write_all(output.as_bytes()) {
+                                Ok(_) => (),
+                                Err(e) => error!("error sending request to push gateway: {:?}", e),
+                            }
+                        }
+                    });
+                    Ok(())
+                };
+
+                Ok((recorder, Box::pin(exporter)))
+            }
         }
     }
 
     /// Builds the recorder and returns it.
-    pub fn build_recorder(self) -> StatsdRecorder {
+    pub fn build_recorder(&self) -> StatsdRecorder {
         self.build_with_clock(Clock::new())
     }
 
-    pub(crate) fn build_with_clock(self, clock: Clock) -> StatsdRecorder {
+    pub(crate) fn build_with_clock(&self, clock: Clock) -> StatsdRecorder {
         let inner = Inner {
             prefix: self.prefix.clone(),
             registry: Registry::new(GenerationalStorage::new(AtomicStorage)),
             recency: Recency::new(clock, self.recency_mask, self.idle_timeout),
             distribution_builder: DistributionBuilder::new(
-                self.quantiles,
-                self.buckets,
-                self.bucket_overrides,
+                self.quantiles.clone(),
+                self.buckets.clone(),
+                self.bucket_overrides.clone(),
             ),
-            global_tags: self.global_tags.unwrap_or_default(),
+            global_tags: self.global_tags.clone().unwrap_or_default(),
         };
 
         StatsdRecorder::from(inner)
