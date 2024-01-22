@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{self};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use metrics_util::{
     registry::{GenerationalStorage, Recency, Registry},
     MetricKindMask, Quantile,
 };
-use tokio::net::UnixStream;
+use tokio::net::UnixDatagram;
 
 use crate::common::BuildError;
 use crate::common::Matcher;
@@ -29,16 +30,14 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 type ExporterFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'static>>;
 
+#[derive(Clone)]
 enum ExporterConfig {
     PushGateway {
         endpoint: SocketAddr,
         interval: Duration,
     },
     /// Write data to a path, probably to a [unix domain socket](https://docs.datadoghq.com/developers/dogstatsd/unix_socket/?tab=kubernetes)
-    SocketGateway {
-        socket: UnixStream,
-        interval: Duration,
-    },
+    SocketGateway { path: PathBuf, interval: Duration },
 
     #[allow(dead_code)]
     Unconfigured,
@@ -129,24 +128,15 @@ impl StatsdBuilder {
     ///
     /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
     /// returned describing the error.
-    pub async fn with_named_socket(
+    pub fn with_named_socket(
         mut self,
         path: impl AsRef<std::path::Path>,
         interval: Duration,
     ) -> Result<Self, BuildError> {
-        let path = path.as_ref().to_path_buf();
-        let socket = UnixStream::connect(&path).await.map_err(|e| {
-            BuildError::InvalidPushGateway(format!(
-                "Unable to open socket at {path:?}: {e}"
-            ))
-        })?;
-        socket.writable().await.map_err(|e| {
-            BuildError::InvalidPushGateway(format!(
-                "Unable to write to socket at {path:?}: {e}"
-            ))
-        })?;
-
-        self.exporter_config = ExporterConfig::SocketGateway { socket, interval };
+        self.exporter_config = ExporterConfig::SocketGateway {
+            path: path.as_ref().to_path_buf(),
+            interval,
+        };
 
         Ok(self)
     }
@@ -378,10 +368,11 @@ impl StatsdBuilder {
     /// returned describing the error.
     pub fn build(self) -> Result<(StatsdRecorder, ExporterFuture), BuildError> {
         let max_packet_size = self.max_packet_size;
+        let exporter_config = self.exporter_config.clone();
         let recorder = self.build_recorder();
         let handle = recorder.handle();
 
-        match self.exporter_config {
+        match exporter_config {
             ExporterConfig::Unconfigured => Err(BuildError::MissingExporterConfiguration),
             ExporterConfig::PushGateway { endpoint, interval } => {
                 let exporter = async move {
@@ -401,19 +392,24 @@ impl StatsdBuilder {
 
                 Ok((recorder, Box::pin(exporter)))
             }
-            ExporterConfig::SocketGateway {
-                mut socket,
-                interval,
-            } => {
+            ExporterConfig::SocketGateway { path, interval } => {
+                let socket = UnixDatagram::bind(&path).map_err(|e| {
+                    BuildError::InvalidPushGateway(format!("Failed to create unbound socket: {e}"))
+                })?;
+
                 let exporter = async move {
                     loop {
                         // Sleep for `interval` amount of time, and then do a push.
                         std::thread::sleep(interval);
                         let output = handle.render();
-                        use tokio::io::AsyncWriteExt;
-                        match socket.write_all(output.as_bytes()).await {
+                        if let Err(e) = socket.connect(&path) {
+                            error!("error connecting to socket {path:?}: {e}");
+                            continue;
+                        }
+
+                        match socket.send(output.as_bytes()).await {
                             Ok(_) => (),
-                            Err(e) => error!("error sending request to push gateway: {:?}", e),
+                            Err(e) => error!("error sending request to push gateway: {e:?}"),
                         }
                     }
                 };
@@ -424,21 +420,21 @@ impl StatsdBuilder {
     }
 
     /// Builds the recorder and returns it.
-    pub fn build_recorder(&self) -> StatsdRecorder {
+    pub fn build_recorder(self) -> StatsdRecorder {
         self.build_with_clock(Clock::new())
     }
 
-    pub(crate) fn build_with_clock(&self, clock: Clock) -> StatsdRecorder {
+    pub(crate) fn build_with_clock(self, clock: Clock) -> StatsdRecorder {
         let inner = Inner {
             prefix: self.prefix.clone(),
             registry: Registry::new(GenerationalStorage::new(AtomicStorage)),
             recency: Recency::new(clock, self.recency_mask, self.idle_timeout),
             distribution_builder: DistributionBuilder::new(
-                self.quantiles.clone(),
-                self.buckets.clone(),
-                self.bucket_overrides.clone(),
+                self.quantiles,
+                self.buckets,
+                self.bucket_overrides,
             ),
-            global_tags: self.global_tags.clone().unwrap_or_default(),
+            global_tags: self.global_tags.unwrap_or_default(),
         };
 
         StatsdRecorder::from(inner)
