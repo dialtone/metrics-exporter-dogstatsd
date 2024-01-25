@@ -405,7 +405,7 @@ impl StatsdBuilder {
                             continue;
                         }
 
-                        match socket.send(output.as_bytes()).await {
+                        match send_all_socket(&socket, output.as_bytes(), max_packet_size).await {
                             Ok(_) => (),
                             Err(e) => error!("error sending request to push gateway: {e:?}"),
                         }
@@ -514,6 +514,41 @@ async fn send_all(
     let packets = split_in_packets(buf, max_packet_size);
     for (start, end) in packets {
         match client.send_to(&buf[start..end], endpoint).await {
+            Ok(nsent) => {
+                if nsent != (end - start) {
+                    tracing::error!(
+                        "Somehow this UDP socket sent less bytes ({}) than it was asked ({})",
+                        nsent,
+                        end - start
+                    );
+                }
+                sent += nsent;
+            }
+            Err(e) => {
+                // we just log the error here because we can just skip sending one packet and try
+                // sending the other ones anyway
+                tracing::error!("error encountered while sending {:?}", e);
+            }
+        }
+    }
+    if sent != buf.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "sent different size than received",
+        ));
+    }
+    Ok(())
+}
+
+async fn send_all_socket(
+    socket: &UnixDatagram,
+    buf: &[u8],
+    max_packet_size: usize,
+) -> io::Result<()> {
+    let mut sent = 0;
+    let packets = split_in_packets(buf, max_packet_size);
+    for (start, end) in packets {
+        match socket.send(&buf[start..end]).await {
             Ok(nsent) => {
                 if nsent != (end - start) {
                     tracing::error!(
