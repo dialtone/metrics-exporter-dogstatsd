@@ -23,7 +23,7 @@ thiserror = { version = "1", default-features = false }
 quanta = { version = "0.11.0", default-features = false }
 indexmap = { version = "1", default-features = false }
 
-tokio = { version = "1", features = ["rt", "net", "time"] }
+tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
 tracing = { version = "0.1.26" }
 
 [package.metadata.docs.rs]
