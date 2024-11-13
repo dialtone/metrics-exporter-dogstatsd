@@ -7,7 +7,7 @@ use crate::distribution::{Distribution, DistributionBuilder};
 use crate::formatting::{key_to_parts, write_metric_line};
 use crate::registry::GenerationalAtomicStorage;
 
-use metrics::{Counter, Gauge, Histogram, Key, KeyName, Recorder, SharedString, Unit};
+use metrics::{Counter, Gauge, Histogram, Key, KeyName, Metadata, Recorder, SharedString, Unit};
 use metrics_util::registry::{Recency, Registry};
 
 use indexmap::IndexMap;
@@ -319,19 +319,19 @@ impl Recorder for StatsdRecorder {
     fn describe_gauge(&self, _k: KeyName, _u: Option<Unit>, _d: SharedString) {}
     fn describe_histogram(&self, _k: KeyName, _u: Option<Unit>, _d: SharedString) {}
 
-    fn register_counter(&self, key: &Key) -> Counter {
+    fn register_counter(&self, key: &Key, _metadata: &Metadata<'_>) -> Counter {
         self.inner
             .registry
             .get_or_create_counter(key, |c| c.clone().into())
     }
 
-    fn register_gauge(&self, key: &Key) -> Gauge {
+    fn register_gauge(&self, key: &Key, _metadata: &Metadata<'_>) -> Gauge {
         self.inner
             .registry
             .get_or_create_gauge(key, |c| c.clone().into())
     }
 
-    fn register_histogram(&self, key: &Key) -> Histogram {
+    fn register_histogram(&self, key: &Key, _metadata: &Metadata<'_>) -> Histogram {
         self.inner
             .registry
             .get_or_create_histogram(key, |c| c.clone().into())
