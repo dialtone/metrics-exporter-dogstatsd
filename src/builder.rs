@@ -394,15 +394,24 @@ impl StatsdBuilder {
                 let socket = UnixDatagram::unbound().map_err(|e| {
                     BuildError::InvalidPushGateway(format!("Failed to create unbound socket: {e}"))
                 })?;
-
                 let exporter = async move {
+                    let mut socket_connected = false;
+
+                    // We try to connect to the socket before entering the loop
+                    connect_to_socket(&path, &socket, &mut socket_connected);
+
                     loop {
                         // Sleep for `interval` amount of time, and then do a push.
                         tokio::time::sleep(interval).await;
                         let output = handle.render();
-                        if let Err(e) = socket.connect(&path) {
-                            error!("error connecting to socket {path:?}: {e}");
-                            continue;
+
+                        // If we haven't succedded at connecting to the socket, we try again before sending
+                        if !socket_connected {
+                            connect_to_socket(&path, &socket, &mut socket_connected);
+                            // If we fail again at connecting, we re-enter the loop
+                            if !socket_connected {
+                                continue;
+                            }
                         }
 
                         match send_all_socket(&socket, output.as_bytes(), max_packet_size).await {
@@ -573,6 +582,14 @@ async fn send_all_socket(
         ));
     }
     Ok(())
+}
+
+fn connect_to_socket(path: &PathBuf, socket: &UnixDatagram, socket_connected: &mut bool) {
+    if let Err(e) = socket.connect(path) {
+        error!("error connecting to socket {path:?}: {e}");
+    } else {
+        *socket_connected = true;
+    }
 }
 
 #[cfg(test)]
