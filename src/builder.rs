@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::io;
+use std::io::{self};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use metrics_util::{
     registry::{GenerationalStorage, Recency, Registry},
     MetricKindMask, Quantile,
 };
+use tokio::net::UnixDatagram;
 
 use crate::common::BuildError;
 use crate::common::Matcher;
@@ -34,6 +36,8 @@ enum ExporterConfig {
         endpoint: SocketAddr,
         interval: Duration,
     },
+    /// Write data to a path, probably to a [unix domain socket](https://docs.datadoghq.com/developers/dogstatsd/unix_socket/?tab=kubernetes)
+    SocketGateway { path: PathBuf, interval: Duration },
 
     #[allow(dead_code)]
     Unconfigured,
@@ -43,6 +47,7 @@ impl ExporterConfig {
     fn as_type_str(&self) -> &'static str {
         match self {
             Self::PushGateway { .. } => "push-gateway",
+            Self::SocketGateway { .. } => "socket-gateway",
             Self::Unconfigured => "unconfigured,",
         }
     }
@@ -104,15 +109,34 @@ impl StatsdBuilder {
     {
         let endpoint = endpoint
             .to_socket_addrs()
-            .map_err(|e| BuildError::InvalidPushGatewayEndpoint(e.to_string()))?
+            .map_err(|e| BuildError::InvalidPushGateway(e.to_string()))?
             .next() // just use the first address we resolve to
             .ok_or_else(|| {
-                BuildError::InvalidPushGatewayEndpoint(
+                BuildError::InvalidPushGateway(
                     "to_socket_addrs returned an empty iterator".to_string(),
                 )
             })?;
 
         self.exporter_config = ExporterConfig::PushGateway { endpoint, interval };
+
+        Ok(self)
+    }
+
+    /// Configures the exporter to push periodic requests to a file (presumably a named socket)
+    ///
+    /// ## Errors
+    ///
+    /// If the given endpoint cannot be parsed into a valid SocketAddr, an error variant will be
+    /// returned describing the error.
+    pub fn with_named_socket(
+        mut self,
+        path: impl AsRef<std::path::Path>,
+        interval: Duration,
+    ) -> Result<Self, BuildError> {
+        self.exporter_config = ExporterConfig::SocketGateway {
+            path: path.as_ref().to_path_buf(),
+            interval,
+        };
 
         Ok(self)
     }
@@ -366,6 +390,30 @@ impl StatsdBuilder {
 
                 Ok((recorder, Box::pin(exporter)))
             }
+            ExporterConfig::SocketGateway { path, interval } => {
+                let socket = UnixDatagram::unbound().map_err(|e| {
+                    BuildError::InvalidPushGateway(format!("Failed to create unbound socket: {e}"))
+                })?;
+
+                let exporter = async move {
+                    loop {
+                        // Sleep for `interval` amount of time, and then do a push.
+                        tokio::time::sleep(interval).await;
+                        let output = handle.render();
+                        if let Err(e) = socket.connect(&path) {
+                            error!("error connecting to socket {path:?}: {e}");
+                            continue;
+                        }
+
+                        match send_all_socket(&socket, output.as_bytes(), max_packet_size).await {
+                            Ok(_) => (),
+                            Err(e) => error!("error sending request to push gateway: {e:?}"),
+                        }
+                    }
+                };
+
+                Ok((recorder, Box::pin(exporter)))
+            }
         }
     }
 
@@ -466,6 +514,41 @@ async fn send_all(
     let packets = split_in_packets(buf, max_packet_size);
     for (start, end) in packets {
         match client.send_to(&buf[start..end], endpoint).await {
+            Ok(nsent) => {
+                if nsent != (end - start) {
+                    tracing::error!(
+                        "Somehow this UDP socket sent less bytes ({}) than it was asked ({})",
+                        nsent,
+                        end - start
+                    );
+                }
+                sent += nsent;
+            }
+            Err(e) => {
+                // we just log the error here because we can just skip sending one packet and try
+                // sending the other ones anyway
+                tracing::error!("error encountered while sending {:?}", e);
+            }
+        }
+    }
+    if sent != buf.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "sent different size than received",
+        ));
+    }
+    Ok(())
+}
+
+async fn send_all_socket(
+    socket: &UnixDatagram,
+    buf: &[u8],
+    max_packet_size: usize,
+) -> io::Result<()> {
+    let mut sent = 0;
+    let packets = split_in_packets(buf, max_packet_size);
+    for (start, end) in packets {
+        match socket.send(&buf[start..end]).await {
             Ok(nsent) => {
                 if nsent != (end - start) {
                     tracing::error!(

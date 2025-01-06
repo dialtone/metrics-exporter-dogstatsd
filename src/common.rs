@@ -60,9 +60,9 @@ pub enum BuildError {
     #[error("failed to parse address as a valid IP address/subnet: {0}")]
     InvalidAllowlistAddress(String),
 
-    /// The given push gateway endpoint is not a valid URI.
-    #[error("push gateway endpoint is not valid: {0}")]
-    InvalidPushGatewayEndpoint(String),
+    /// The given push gateway is not valid.
+    #[error("push gateway is not valid: {0}")]
+    InvalidPushGateway(String),
 
     /// No exporter configuration was present.
     ///
