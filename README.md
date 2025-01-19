@@ -15,7 +15,7 @@ This crate takes full advantage of atomics and the performance of the `metrics` 
 
 ## superceded by metrics-rs
 
-This crate has now (January 2025) been [superceded](https://github.com/metrics/metrics-rs) by the upstream version of the crate, maintained by the `metrics-rs` team. Version 0.8.0 is the last release based on _this_ repository, and users are encouraged to upgrade to 0.9.0 where possible, and file issues upstream if there are any identified gaps.
+This crate has now (January 2025) been [superceded](https://github.com/metrics-rs/metrics) by the upstream version of the crate, maintained by the `metrics-rs` team. Version 0.8.0 is the last release based on _this_ repository, and users are encouraged to upgrade to 0.9.0 where possible, and file issues upstream if there are any identified gaps.
 
 
 [cadence]: https://github.com/56quarters/cadence/
