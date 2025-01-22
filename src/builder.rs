@@ -320,7 +320,7 @@ impl StatsdBuilder {
             recorder
         };
 
-        metrics::set_boxed_recorder(Box::new(recorder))?;
+        metrics::set_global_recorder(recorder)?;
 
         Ok(())
     }
@@ -495,10 +495,12 @@ async fn send_all(
 #[cfg(test)]
 mod tests {
     use super::{split_in_packets, Matcher, StatsdBuilder};
-    use metrics::{Key, KeyName, Label, Recorder};
+    use metrics::{Key, KeyName, Label, Level, Metadata, Recorder};
     use metrics_util::MetricKindMask;
     use quanta::Clock;
     use std::time::Duration;
+
+    static METADATA: Metadata = Metadata::new(module_path!(), Level::INFO, Some(module_path!()));
 
     #[test]
     fn test_split_packet() {
@@ -600,7 +602,7 @@ mod tests {
             .build_recorder();
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let handle = recorder.handle();
@@ -610,7 +612,7 @@ mod tests {
 
         let labels = vec![Label::new("wutang", "forever")];
         let key = Key::from_parts("basic.gauge", labels);
-        let gauge1 = recorder.register_gauge(&key);
+        let gauge1 = recorder.register_gauge(&key, &METADATA);
         gauge1.set(-3.44);
         let rendered = handle.render();
         // each render call will reset the value of the counter
@@ -618,7 +620,7 @@ mod tests {
         assert_eq!(rendered, expected_gauge);
 
         let key = Key::from_name("basic.histogram");
-        let histogram1 = recorder.register_histogram(&key);
+        let histogram1 = recorder.register_histogram(&key, &METADATA);
         histogram1.record(12.0);
         let rendered = handle.render();
 
@@ -659,19 +661,19 @@ mod tests {
             .build_recorder();
 
         let full_key = Key::from_name("metrics.testing_foo");
-        let full_key_histo = recorder.register_histogram(&full_key);
+        let full_key_histo = recorder.register_histogram(&full_key, &METADATA);
         full_key_histo.record(FULL_VALUES[0]);
 
         let prefix_key = Key::from_name("metrics.testing_bar");
-        let prefix_key_histo = recorder.register_histogram(&prefix_key);
+        let prefix_key_histo = recorder.register_histogram(&prefix_key, &METADATA);
         prefix_key_histo.record(PREFIX_VALUES[1]);
 
         let suffix_key = Key::from_name("metrics.testin_foo");
-        let suffix_key_histo = recorder.register_histogram(&suffix_key);
+        let suffix_key_histo = recorder.register_histogram(&suffix_key, &METADATA);
         suffix_key_histo.record(SUFFIX_VALUES[2]);
 
         let default_key = Key::from_name("metrics.wee");
-        let default_key_histo = recorder.register_histogram(&default_key);
+        let default_key_histo = recorder.register_histogram(&default_key, &METADATA);
         default_key_histo.record(DEFAULT_VALUES[2] + 1.0);
 
         let full_data = concat!(
@@ -735,15 +737,15 @@ mod tests {
             .build_with_clock(clock);
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let key = Key::from_name("basic.gauge");
-        let gauge1 = recorder.register_gauge(&key);
+        let gauge1 = recorder.register_gauge(&key, &METADATA);
         gauge1.set(-3.44);
 
         let key = Key::from_name("basic.histogram");
-        let histo1 = recorder.register_histogram(&key);
+        let histo1 = recorder.register_histogram(&key, &METADATA);
         histo1.record(1.0);
 
         let handle = recorder.handle();
@@ -792,15 +794,15 @@ mod tests {
             .build_with_clock(clock);
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let key = Key::from_name("basic.gauge");
-        let gauge1 = recorder.register_gauge(&key);
+        let gauge1 = recorder.register_gauge(&key, &METADATA);
         gauge1.set(-3.44);
 
         let key = Key::from_name("basic.histogram");
-        let histo1 = recorder.register_histogram(&key);
+        let histo1 = recorder.register_histogram(&key, &METADATA);
         histo1.record(1.0);
 
         let handle = recorder.handle();
@@ -840,15 +842,15 @@ mod tests {
             .build_with_clock(clock);
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let key = Key::from_name("basic.gauge");
-        let gauge1 = recorder.register_gauge(&key);
+        let gauge1 = recorder.register_gauge(&key, &METADATA);
         gauge1.set(-3.44);
 
         let key = Key::from_name("basic.histogram");
-        let histo1 = recorder.register_histogram(&key);
+        let histo1 = recorder.register_histogram(&key, &METADATA);
         histo1.record(1.0);
 
         let handle = recorder.handle();
@@ -870,7 +872,7 @@ mod tests {
         assert_eq!(rendered, expected);
 
         let key = Key::from_parts("basic.histogram", vec![Label::new("type", "special")]);
-        let histo2 = recorder.register_histogram(&key);
+        let histo2 = recorder.register_histogram(&key, &METADATA);
         histo2.record(2.0);
 
         let expected_second = concat!(
@@ -913,11 +915,11 @@ mod tests {
             .build_with_clock(clock);
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let key = Key::from_name("basic.gauge");
-        let gauge1 = recorder.register_gauge(&key);
+        let gauge1 = recorder.register_gauge(&key, &METADATA);
         gauge1.set(-3.44);
 
         let handle = recorder.handle();
@@ -953,7 +955,7 @@ mod tests {
             .build_with_clock(clock);
 
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         // First render, which starts tracking the counter in the recency state.
@@ -992,7 +994,7 @@ mod tests {
             .add_global_tag("foo", "bar")
             .build_recorder();
         let key = Key::from_name("basic.counter");
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(42);
 
         let handle = recorder.handle();
@@ -1010,7 +1012,7 @@ mod tests {
 
         let key =
             Key::from_name("overridden").with_extra_labels(vec![Label::new("foo", "overridden")]);
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(1);
 
         let handle = recorder.handle();
@@ -1029,7 +1031,7 @@ mod tests {
         let key_name = KeyName::from("yee_haw:lets go");
         let key =
             Key::from_name(key_name).with_extra_labels(vec![Label::new("øhno", "\"yeet\nies\\\"")]);
-        let counter1 = recorder.register_counter(&key);
+        let counter1 = recorder.register_counter(&key, &METADATA);
         counter1.increment(1);
 
         let handle = recorder.handle();
@@ -1045,7 +1047,7 @@ mod tests {
 
         let key_name = KeyName::from("distn");
         let key = Key::from_name(key_name);
-        let hist = recorder.register_histogram(&key);
+        let hist = recorder.register_histogram(&key, &METADATA);
 
         hist.record(12.0);
 
@@ -1064,7 +1066,7 @@ mod tests {
 
         let key_name = KeyName::from("data-dist");
         let key = Key::from_name(key_name);
-        let hist = recorder.register_histogram(&key);
+        let hist = recorder.register_histogram(&key, &METADATA);
 
         hist.record(12.0);
 
