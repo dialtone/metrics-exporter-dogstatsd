@@ -261,10 +261,6 @@ impl StatsdBuilder {
     ///
     /// Refer to the documentation for [`MetricKindMask`](metrics_util::MetricKindMask) for more
     /// information on defining a metric kind mask.
-    ///
-    /// When a metric is rendered its value is replaced with a "zero-value" for that `MetricKind`
-    /// however any metric with a state "zero-value" will not be rendered and will be cleaned up
-    /// when its corresponding idle timeout expires.
     #[must_use]
     pub fn idle_timeout(mut self, mask: MetricKindMask, timeout: Option<Duration>) -> Self {
         self.idle_timeout = timeout;
@@ -614,7 +610,12 @@ mod tests {
         gauge1.set(-3.44);
         let rendered = handle.render();
         // each render call will reset the value of the counter
-        let expected_gauge = "basic.gauge:-3.44|g|#wutang:forever\n\n";
+        let expected_gauge = concat!(
+            "basic.counter:0|c\n",
+            "\n",
+            "basic.gauge:-3.44|g|#wutang:forever\n",
+            "\n",
+        );
         assert_eq!(rendered, expected_gauge);
 
         let key = Key::from_name("basic.histogram");
@@ -623,6 +624,8 @@ mod tests {
         let rendered = handle.render();
 
         let histogram_data = concat!(
+            "basic.counter:0|c\n\n",
+            "basic.gauge:-3.44|g|#wutang:forever\n\n",
             "basic.histogram.min:12|g\n",
             "basic.histogram.max:12|g\n",
             "basic.histogram.avg:12|g\n",
